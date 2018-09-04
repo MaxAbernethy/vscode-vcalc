@@ -357,6 +357,7 @@ class ContentProvider implements DocumentLinkProvider
         }
 
         // Decide what to do next
+        let binaryOperator = true;
         while (true)
         {
             // Show the current value
@@ -366,11 +367,16 @@ class ContentProvider implements DocumentLinkProvider
             {
                 message = 'Select ' + resultStr;
             }
-            else
+            else if (binaryOperator)
             {
                 message = stringify(this.operand) + ' ' + this.operator + ' ' + stringify(operand) + ' = ' + resultStr;
             }
+            else
+            {
+                message = this.operator + ' ' + stringify(this.operand) + ' = ' + resultStr;
+            }
             this.report(message);
+            binaryOperator = false;
 
             // Build the operator list
             let operators: QuickPickItem[] = [];
@@ -423,6 +429,10 @@ class ContentProvider implements DocumentLinkProvider
                 return;
             }
 
+            // Save the result and operator
+            this.operator = operator.label;
+            this.operand = result;
+
             // Handle unary operators
             switch (operator.label)
             {
@@ -461,8 +471,6 @@ class ContentProvider implements DocumentLinkProvider
                     }
 
                     // Binary operator, wait for another operand
-                    this.operator = operator.label;
-                    this.operand = result;
                     break;
             }
 
