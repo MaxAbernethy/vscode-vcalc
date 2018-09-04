@@ -1,7 +1,7 @@
 'use strict';
 import { ExtensionContext, CancellationToken, DecorationOptions, Disposable, DocumentLink, DocumentLinkProvider,
-    OutputChannel, Position, QuickPickItem, Range, TextDocument, TextEditorDecorationType, Uri, 
-    languages, commands, window,  } from 'vscode';
+    OutputChannel, Position, QuickPickItem, Range, TextDocument, TextEditorDecorationType, TextEditorEdit, Uri, 
+    languages, commands, window, EndOfLine,  } from 'vscode';
 let clipboardy = require('clipboardy');
 
 class ValueType
@@ -384,7 +384,7 @@ class ContentProvider implements DocumentLinkProvider
 
             // Output operations
             operators.push({ label: 'copy', description: resultStr });
-            operators.push({ label: 'insert', description: resultStr });
+            operators.push({ label: 'append', description: resultStr });
 
             // Dimension-specific operations
             if (resultType.dimensions === 1)
@@ -408,7 +408,7 @@ class ContentProvider implements DocumentLinkProvider
                 // Matrix operations
                 for (let i = 0; i < resultType.length; i++)
                 {
-                    operators.push({ label: 'col' + i, description: stringify(column(result, i))})
+                    operators.push({ label: 'col' + i, description: stringify(column(result, i))});
                 }
                 operators.push({ label: 'transpose', description: stringify(transpose(result))});
             }
@@ -453,10 +453,25 @@ class ContentProvider implements DocumentLinkProvider
                     this.clear();
                     break;
 
-                case 'insert':
-                    // TODO
+                case 'append':
+                    if (window.activeTextEditor)
+                    {
+                        let doc = window.activeTextEditor.document;
+                        let position: Position = new Position(doc.lineCount, doc.lineAt(doc.lineCount - 1).text.length);
+                        let eol: string = (doc.eol === EndOfLine.CRLF ? '\r\n' : '\n');
+                        let edited = await window.activeTextEditor.edit(function(editBuilder: TextEditorEdit)
+                        {
+                            editBuilder.insert(position, eol + resultStr);
+                        });
+                        if (edited)
+                        {
+                            this.clear();
+                            break;
+                        }
+                    }
+                    this.report('error, could not insert');
                     this.clear();
-                    break;
+                    return;
 
                 default:
                     // Special case: column operator
