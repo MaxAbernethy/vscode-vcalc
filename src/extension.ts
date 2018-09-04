@@ -1,6 +1,6 @@
 'use strict';
-import { ExtensionContext, CancellationToken, DecorationOptions, Disposable, DocumentLink, DocumentLinkProvider, TextDocument,
-    Range, Position, QuickPickItem, TextEditorDecorationType, Uri, 
+import { ExtensionContext, CancellationToken, DecorationOptions, Disposable, DocumentLink, DocumentLinkProvider,
+    OutputChannel, Position, QuickPickItem, Range, TextDocument, TextEditorDecorationType, Uri, 
     languages, commands, window,  } from 'vscode';
 let clipboardy = require('clipboardy');
 
@@ -102,12 +102,12 @@ function matrixMultiply(m:number[], x:number[]): number[]
     let result: number[] = [];
     for (let i = 0; i < x.length; i++)
     {
-        let offsetM = i % 3;
-        let offsetX = Math.floor(i / 3) * 3;
+        let offsetM = i % typeM.length;
+        let offsetX = Math.floor(i / typeM.length) * typeM.length;
         let sum = 0;
         for (let j = 0; j < typeM.length; j++)
         {
-            sum += m[offsetM + j * 3] * x[offsetX + j];
+            sum += m[offsetM + j * typeM.length] * x[offsetX + j];
         }
         result.push(sum);
     }
@@ -188,6 +188,9 @@ class ContentProvider implements DocumentLinkProvider
         this.scalarDecorationType = window.createTextEditorDecorationType({ color : "#00c0f0" });
         this.vectorDecorationType = window.createTextEditorDecorationType({ color : "#f000a0" });
         this.matrixDecorationType = window.createTextEditorDecorationType({ color : "#b0f000" });
+
+        // Set up text output
+        this.channel = window.createOutputChannel('vcalc');
     }
 
     provideDocumentLinks(document: TextDocument, token: CancellationToken): DocumentLink[]
@@ -258,6 +261,12 @@ class ContentProvider implements DocumentLinkProvider
         return links;
     }
 
+    report(message: string)
+    {
+        window.showInformationMessage('vcalc: ' + message);
+        this.channel.appendLine(message);
+    }
+
     async setOperand(operandStr: string)
     {
         // Parse the operand
@@ -310,7 +319,7 @@ class ContentProvider implements DocumentLinkProvider
         // Check for an error, eg. mismatched operands
         if (result.length === 0)
         {
-            window.showInformationMessage('vcalc: error');
+            this.report('error');
             this.clear();
             return;
         }
@@ -318,6 +327,19 @@ class ContentProvider implements DocumentLinkProvider
         // Decide what to do next
         while (true)
         {
+            // Show the current value
+            let resultStr = stringify(result);
+            let message: string;
+            if (this.operator.length === 0)
+            {
+                message = 'Select ' + resultStr;
+            }
+            else
+            {
+                message = stringify(this.operand) + ' ' + this.operator + ' ' + stringify(operand) + ' = ' + resultStr;
+            }
+            this.report(message);
+
             // Build the operator list
             let operators: QuickPickItem[] = [];
             let operandType = getType(result.length);
@@ -344,7 +366,6 @@ class ContentProvider implements DocumentLinkProvider
             }
 
             // Common operations
-            let resultStr = stringify(result);
             operators.push({ label: 'add' });
             operators.push({ label: 'subtract' });
             operators.push({ label: 'multiply' });
@@ -352,9 +373,6 @@ class ContentProvider implements DocumentLinkProvider
             operators.push({ label: 'reciprocal', description: stringify(reciprocal(result)) });
             operators.push({ label: 'copy', description: resultStr });
             operators.push({ label: 'insert', description: resultStr });
-
-            // Show the current value
-            window.showInformationMessage('vcalc: ' + stringify(result));
 
             // Choose an operator
             let operator = await window.showQuickPick(operators);
@@ -399,15 +417,8 @@ class ContentProvider implements DocumentLinkProvider
             // Show the current value and operator
             if (this.operand.length > 0)
             {
-                window.showInformationMessage('vcalc: ' + stringify(this.operand) + ' ' + this.operator + ' ...');
+                this.report(stringify(this.operand) + ' ' + this.operator + ' ...');
             }
-
-            // Re-parse links
-            /*
-            if (window.activeTextEditor)
-            {
-                commands.executeCommand<DocumentLink[]>('vscode.executeLinkProvider', window.activeTextEditor.document.uri);
-            }*/
 
             return;
         }
@@ -436,6 +447,9 @@ class ContentProvider implements DocumentLinkProvider
     scalarDecorationType: TextEditorDecorationType;
     vectorDecorationType: TextEditorDecorationType;
     matrixDecorationType: TextEditorDecorationType;
+
+    // Console output
+    channel: OutputChannel;
 }
 
 // this method is called when your extension is activated
