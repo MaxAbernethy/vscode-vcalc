@@ -171,6 +171,38 @@ function cross(a:number[], b:number[]): number[]
     ];
 }
 
+function column(m:number[], c: number) : number[]
+{
+    let type = getType(m.length);
+    if (type.dimensions !== 2 || c !== Math.floor(c) || c < 0 || c >= type.length)
+    {
+        return [];
+    }
+
+    let start = type.length * c;
+    return m.slice(start, start + type.length);
+}
+
+function transpose(m:number[]) : number[]
+{
+    let type = getType(m.length);
+    if (type.dimensions !== 2)
+    {
+        return [];
+    }
+
+    let result: number[] = [];
+    for (let i = 0; i < type.length; i++)
+    {
+        for (let j = 0; j < type.length; j++)
+        {
+            result.push(m[i + j * 4]);
+        }
+    }
+
+    return result;
+}
+
 class ContentProvider implements DocumentLinkProvider
 {
     constructor()
@@ -342,13 +374,18 @@ class ContentProvider implements DocumentLinkProvider
 
             // Build the operator list
             let operators: QuickPickItem[] = [];
-            let operandType = getType(result.length);
+            let resultType = getType(result.length);
 
-            if (operandType.dimensions === 1)
+            // Output operations
+            operators.push({ label: 'copy', description: resultStr });
+            operators.push({ label: 'insert', description: resultStr });
+
+            // Dimension-specific operations
+            if (resultType.dimensions === 1)
             {
                 // Vector operations
                 let labels = ['x', 'y', 'z', 'w'];
-                for (let i = 0; i < operandType.length; i++)
+                for (let i = 0; i < resultType.length; i++)
                 {
                     operators.push({ label: labels[i], description : result[i].toString()});
                 }
@@ -360,9 +397,14 @@ class ContentProvider implements DocumentLinkProvider
                     operators.push({ label: 'cross' });
                 }
             }
-            else if (operandType.dimensions === 2)
+            else if (resultType.dimensions === 2)
             {
                 // Matrix operations
+                for (let i = 0; i < resultType.length; i++)
+                {
+                    operators.push({ label: 'col' + i, description: stringify(column(result, i))})
+                }
+                operators.push({ label: 'transpose', description: stringify(transpose(result))});
             }
 
             // Common operations
@@ -371,8 +413,6 @@ class ContentProvider implements DocumentLinkProvider
             operators.push({ label: 'multiply' });
             operators.push({ label: 'divide' });
             operators.push({ label: 'reciprocal', description: stringify(reciprocal(result)) });
-            operators.push({ label: 'copy', description: resultStr });
-            operators.push({ label: 'insert', description: resultStr });
 
             // Choose an operator
             let operator = await window.showQuickPick(operators);
@@ -395,6 +435,7 @@ class ContentProvider implements DocumentLinkProvider
                 case 'length': result = [magnitude(result)]; continue;
                 case 'reciprocal': result = reciprocal(result); continue;
                 case 'normalize': result = normalize(result); continue;
+                case 'transpose': result = transpose(result); continue;
 
                 // Output
                 case 'copy':
@@ -408,6 +449,17 @@ class ContentProvider implements DocumentLinkProvider
                     break;
 
                 default:
+                    // Special case: column operator
+                    {
+                        let colMatch = operator.label.match(/^col(\d+)$/);
+                        if (colMatch !== null)
+                        {
+                            let col = parseInt(colMatch[1]);
+                            result = column(result, col);
+                            continue;
+                        }
+                    }
+
                     // Binary operator, wait for another operand
                     this.operator = operator.label;
                     this.operand = result;
