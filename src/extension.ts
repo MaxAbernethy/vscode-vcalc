@@ -1,5 +1,6 @@
 'use strict';
-import { ExtensionContext, CancellationToken, Disposable, DocumentLink, DocumentLinkProvider, TextDocument, Range, Position, Uri, QuickPickItem,
+import { ExtensionContext, CancellationToken, DecorationOptions, Disposable, DocumentLink, DocumentLinkProvider, TextDocument,
+    Range, Position, QuickPickItem, TextEditorDecorationType, Uri, 
     languages, commands, window,  } from 'vscode';
 let clipboardy = require('clipboardy');
 
@@ -182,11 +183,19 @@ class ContentProvider implements DocumentLinkProvider
         this.trailingSeparatorExpr = new RegExp(sepExprStr + "*$");
         let arrayExprStr = "(^|" + sepExprStr + "*)" + numberExprStr + "(" + sepExprStr + "*," + sepExprStr + "*" + numberExprStr + ")*";
         this.arrayExpr = new RegExp(arrayExprStr, 'g');
+
+        // Set up decorations
+        this.scalarDecorationType = window.createTextEditorDecorationType({ color : "#00c0f0" });
+        this.vectorDecorationType = window.createTextEditorDecorationType({ color : "#f000a0" });
+        this.matrixDecorationType = window.createTextEditorDecorationType({ color : "#b0f000" });
     }
 
     provideDocumentLinks(document: TextDocument, token: CancellationToken): DocumentLink[]
     {
         let links: DocumentLink[] = [];
+        let scalarDecorations : DecorationOptions[] = [];
+        let vectorDecorations : DecorationOptions[] = [];
+        let matrixDecorations : DecorationOptions[] = [];
         for (let i = 0; i < document.lineCount; i++)
         {
             let line = document.lineAt(i).text;
@@ -228,6 +237,22 @@ class ContentProvider implements DocumentLinkProvider
                 let range = new Range(new Position(i, match.index + leadingSeparators), new Position(i, match.index + match[0].length - trailingSeparators));
                 let commandUri = 'command:vectorcalculator.setOperand?' + JSON.stringify(match[0]);
                 links.push(new DocumentLink(range, Uri.parse(commandUri)));
+
+                // Add decoration
+                switch (typeB.dimensions)
+                {
+                    case 0: scalarDecorations.push({ range: range, hoverMessage: 'scalar' }); break;
+                    case 1: vectorDecorations.push({ range: range, hoverMessage: 'vector' + typeB.length }); break;
+                    case 2: matrixDecorations.push({ range: range, hoverMessage: 'matrix' + typeB.length + 'x' + typeB.length }); break;
+                    default: break;
+                }
+            }
+
+            if (window.activeTextEditor)
+            {
+                window.activeTextEditor.setDecorations(this.scalarDecorationType, scalarDecorations);
+                window.activeTextEditor.setDecorations(this.vectorDecorationType, vectorDecorations);
+                window.activeTextEditor.setDecorations(this.matrixDecorationType, matrixDecorations);
             }
         }
         return links;
@@ -406,6 +431,11 @@ class ContentProvider implements DocumentLinkProvider
     arrayExpr: RegExp;
     leadingSeparatorExpr: RegExp;
     trailingSeparatorExpr: RegExp;
+
+    // Styling
+    scalarDecorationType: TextEditorDecorationType;
+    vectorDecorationType: TextEditorDecorationType;
+    matrixDecorationType: TextEditorDecorationType;
 }
 
 // this method is called when your extension is activated
