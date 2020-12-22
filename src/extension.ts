@@ -2,7 +2,8 @@
 import { ExtensionContext, CancellationToken, DecorationOptions, Disposable, DocumentLink, DocumentLinkProvider,
     OutputChannel, Position, QuickPickItem, Range, TextDocument, TextEditorDecorationType, TextEditorEdit, Uri, 
     languages, commands, window, EndOfLine,  } from 'vscode';
-let clipboardy = require('clipboardy');
+
+let vscode = require('vscode');
 
 class ValueType
 {
@@ -449,7 +450,7 @@ class ContentProvider implements DocumentLinkProvider
 
                 // Output
                 case 'copy':
-                    clipboardy.write(stringify(result));
+                    vscode.env.clipboard.writeText(stringify(result));
                     this.clear();
                     break;
 
