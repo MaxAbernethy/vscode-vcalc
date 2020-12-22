@@ -217,9 +217,9 @@ class ContentProvider implements DocumentLinkProvider
         this.arrayExpr = new RegExp(arrayExprStr, 'g');
 
         // Set up decorations
-        this.scalarDecorationType = window.createTextEditorDecorationType({ color : "#00c0f0" });
-        this.vectorDecorationType = window.createTextEditorDecorationType({ color : "#f000a0" });
-        this.matrixDecorationType = window.createTextEditorDecorationType({ color : "#b0f000" });
+        this.scalarDecorationType = window.createTextEditorDecorationType({ color : "#9cdcfe" });
+        this.vectorDecorationType = window.createTextEditorDecorationType({ color : "#dcdcaa" });
+        this.matrixDecorationType = window.createTextEditorDecorationType({ color : "#c586c0" });
 
         // Set up text output
         this.channel = window.createOutputChannel('vcalc');
