@@ -22,6 +22,12 @@ class ValueType
     length:number = 0;
 }
 
+enum ValueMode
+{
+    Decimal,
+    Hexadecimal
+}
+
 function getType(length:number) : ValueType
 {
     // Scalar
@@ -46,34 +52,51 @@ function getType(length:number) : ValueType
     return new ValueType(0, 0); // invalid
 }
 
-function stringify(x:number[]): string
+function stringifyScalar(x:number, mode:ValueMode)
+{
+    switch (mode)
+    {
+        case ValueMode.Decimal: return x.toString();
+        case ValueMode.Hexadecimal: return '0x' + ('00000000' + x.toString(16)).substr(-8);
+    }
+}
+
+function stringifyVector(x:number[], mode:ValueMode)
+{
+    let vector = '(';
+    for (let i = 0; i < x.length; i++)
+    {
+        vector += stringifyScalar(x[i], mode);
+        if (i < x.length - 1)
+        {
+            vector += ', ';
+        }
+    }
+    return vector + ')'
+}
+
+function stringify(x:number[], mode: ValueMode): string
 {
     let type = getType(x.length);
     switch(type.dimensions)
     {
-        case 0: return x[0].toString();
-        case 1: return '(' + x.join(', ') + ')';
+        case 0: return stringifyScalar(x[0], mode);
+        case 1: return stringifyVector(x, mode);
         case 2:
         {
-            let cols = '';
+            let matrix = '(';
             for (let i = 0; i < type.length; i++)
             {
-                cols += '(' + x.slice(i * type.length, (i + 1) * type.length).join(', ') + ')';
+                matrix += stringifyVector(x.slice(i * type.length, (i + 1) * type.length), mode);
                 if (i < type.length - 1)
                 {
-                    cols += ', ';
+                    matrix += ', ';
                 }
             }
-            return '(' + cols + ')';
+            return matrix + ')';
         }
         default: return 'error';
     }
-}
-
-// Convert a number to a 32-bit hexadecimal string with leading 0s and 0x
-function hex32(x:number)
-{
-    return '0x' + ('00000000' + x.toString(16)).substr(-8);
 }
 
 function opPairs(a:number[], b:number[], op:(a:number, b:number)=>number): number[]
@@ -310,34 +333,12 @@ class ContentProvider implements DocumentLinkProvider
         this.channel.appendLine(message);
     }
 
-    async append(s: string): Promise<boolean>
-    {
-        
-        if (window.activeTextEditor)
-        {
-            let doc = window.activeTextEditor.document;
-            let position: Position = new Position(doc.lineCount, doc.lineAt(doc.lineCount - 1).text.length);
-            let eol: string = (doc.eol === EndOfLine.CRLF ? '\r\n' : '\n');
-            let edited = await window.activeTextEditor.edit(function(editBuilder: TextEditorEdit)
-            {
-                editBuilder.insert(position, eol + s);
-            });
-            if (edited)
-            {
-                this.clear();
-                return true;
-            }
-        }
-        this.report('error, could not insert');
-        this.clear();
-        return false;
-    }
-
     async setOperand(operandStr: string)
     {
         // Parse the operand
         this.numberExpr.lastIndex = 0;
         let operand: number[] = [];
+        let allHex: boolean = (this.operand.length === 0 || this.mode === ValueMode.Hexadecimal);
         while (true)
         {
             let match = this.numberExpr.exec(operandStr);
@@ -346,13 +347,15 @@ class ContentProvider implements DocumentLinkProvider
             }
             if (match[4] == undefined)
             {
-                operand.push(parseFloat(match[0]));
+                operand.push(parseFloat(match[3]));
+                allHex = false;
             }
             else
             {
-                operand.push(parseInt(match[0]));
+                operand.push(parseInt(match[3]));
             }
         }
+        this.mode = (allHex ? ValueMode.Hexadecimal : ValueMode.Decimal);
 
         // If there was an operation in progress, complete it
         let result: number[] = [];
@@ -402,7 +405,7 @@ class ContentProvider implements DocumentLinkProvider
         while (true)
         {
             // Show the current value
-            let resultStr = stringify(result);
+            let resultStr = stringify(result, this.mode);
             let message: string;
             if (this.operator.length === 0)
             {
@@ -410,11 +413,11 @@ class ContentProvider implements DocumentLinkProvider
             }
             else if (binaryOperator)
             {
-                message = stringify(this.operand) + ' ' + this.operator + ' ' + stringify(operand) + ' = ' + resultStr;
+                message = stringify(this.operand, this.mode) + ' ' + this.operator + ' ' + stringify(operand, this.mode) + ' = ' + resultStr;
             }
             else
             {
-                message = this.operator + ' ' + stringify(this.operand) + ' = ' + resultStr;
+                message = this.operator + ' ' + stringify(this.operand, this.mode) + ' = ' + resultStr;
             }
             this.report(message);
             binaryOperator = false;
@@ -427,14 +430,29 @@ class ContentProvider implements DocumentLinkProvider
             operators.push({ label: 'copy', description: resultStr });
             operators.push({ label: 'append', description: resultStr });
 
-            if (resultType.dimensions === 0)
+            // Mode operations
+            let isIntegral: boolean = true;
+            for (let i = 0; i < result.length; i++)
             {
-                if (Number.isInteger(result[0]) && result[0] >= 0 && result[0] <= 0xffffffff)
+                if (!Number.isInteger(result[i]) || result[i] < 0 || result[i] > 0xffffffff)
                 {
-                    operators.push({ label: 'hex32', description: hex32(result[0])});
+                    isIntegral = false;
                 }
             }
-            else if (resultType.dimensions === 1)
+            if (isIntegral)
+            {
+                switch (this.mode)
+                {
+                    case ValueMode.Decimal:
+                        operators.push({ label: 'hex32', description: stringify(result, ValueMode.Hexadecimal)});
+                        break;
+                    case ValueMode.Hexadecimal:
+                        operators.push({ label: 'decimal', description: stringify(result, ValueMode.Decimal)});
+                        break;
+                }
+            }
+
+            if (resultType.dimensions === 1)
             {
                 // Vector operations
                 let labels = ['x', 'y', 'z', 'w'];
@@ -443,7 +461,7 @@ class ContentProvider implements DocumentLinkProvider
                     operators.push({ label: labels[i], description : result[i].toString()});
                 }
                 operators.push({ label: 'length', description: magnitude(result).toString() });
-                operators.push({ label: 'normalize', description: stringify(normalize(result)) });
+                operators.push({ label: 'normalize', description: stringify(normalize(result), this.mode) });
                 operators.push({ label: 'dot' });
                 if (result.length === 3)
                 {
@@ -455,9 +473,9 @@ class ContentProvider implements DocumentLinkProvider
                 // Matrix operations
                 for (let i = 0; i < resultType.length; i++)
                 {
-                    operators.push({ label: 'col' + i, description: stringify(column(result, i))});
+                    operators.push({ label: 'col' + i, description: stringify(column(result, i), this.mode)});
                 }
-                operators.push({ label: 'transpose', description: stringify(transpose(result))});
+                operators.push({ label: 'transpose', description: stringify(transpose(result), this.mode)});
             }
 
             // Common operations
@@ -465,7 +483,7 @@ class ContentProvider implements DocumentLinkProvider
             operators.push({ label: 'subtract' });
             operators.push({ label: 'multiply' });
             operators.push({ label: 'divide' });
-            operators.push({ label: 'reciprocal', description: stringify(reciprocal(result)) });
+            operators.push({ label: 'reciprocal', description: stringify(reciprocal(result), this.mode) });
 
             // Choose an operator
             let operator = await window.showQuickPick(operators);
@@ -496,23 +514,34 @@ class ContentProvider implements DocumentLinkProvider
 
                 // Output
                 case 'copy':
-                    vscode.env.clipboard.writeText(stringify(result));
+                    vscode.env.clipboard.writeText(stringify(result, this.mode));
                     this.clear();
                     break;
 
                 case 'append':
-                    if (await this.append(resultStr))
+                    
+                    if (window.activeTextEditor)
                     {
-                        break;
+                        let doc = window.activeTextEditor.document;
+                        let position: Position = new Position(doc.lineCount, doc.lineAt(doc.lineCount - 1).text.length);
+                        let eol: string = (doc.eol === EndOfLine.CRLF ? '\r\n' : '\n');
+                        let edited = await window.activeTextEditor.edit(function(editBuilder: TextEditorEdit)
+                        {
+                            editBuilder.insert(position, eol + resultStr);
+                        });
+                        if (edited)
+                        {
+                            this.clear();
+                            break;
+                        }
                     }
+                    this.report('error, could not insert');
+                    this.clear();
                     return;
 
-                case 'hex32':
-                    if (await this.append(hex32(result[0])))
-                    {
-                        break;
-                    }
-                    return;
+                // Mode
+                case 'decimal': this.mode = ValueMode.Decimal; continue;
+                case 'hex32': this.mode = ValueMode.Hexadecimal; continue;
 
                 default:
                     // Special case: column operator
@@ -533,7 +562,7 @@ class ContentProvider implements DocumentLinkProvider
             // Show the current value and operator
             if (this.operand.length > 0)
             {
-                this.report(stringify(this.operand) + ' ' + this.operator + ' ...');
+                this.report(stringify(this.operand, this.mode) + ' ' + this.operator + ' ...');
             }
 
             return;
@@ -552,6 +581,7 @@ class ContentProvider implements DocumentLinkProvider
     // Currently selected operand / operator
     operand: number[] = [];
     operator: string = '';
+    mode: ValueMode = ValueMode.Decimal;
 
     // Regular expressions
     numberExpr: RegExp;
