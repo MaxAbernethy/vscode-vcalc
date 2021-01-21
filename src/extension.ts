@@ -215,7 +215,11 @@ class ContentProvider implements DocumentLinkProvider
     constructor()
     {
         // Initialize regular expressions
-        let numberExprStr = "((0x[0-9A-Fa-f]+)|(-?\\d+\\.?\\d*(e[+-]?\\d+)?f?))";
+        // numberExprStr = non-alphanumeric or beginning of string, ((hexadecimal number) or (decimal number))
+        //      (exponent) = e, maybe sign, digits
+        //   (hexadecimal number) = match[4] = 0x, hex digits
+        //   (decimal number) = match[5] = maybe sign, digits, point, maybe more digits, maybe (exponent), maybe f
+        let numberExprStr = "(([^a-zA-Z0-9]|^)((0x[0-9A-Fa-f]+)|(-?\\d+\\.?\\d*(e[+-]?\\d+)?f?)))";
         this.numberExpr = new RegExp(numberExprStr, 'g');
         let sepExprStr = "[()[\\]{}=\\s]";
         this.leadingSeparatorExpr = new RegExp("^" + sepExprStr + "*");
@@ -340,7 +344,7 @@ class ContentProvider implements DocumentLinkProvider
             if (match === null) {
                 break;
             }
-            if (match[2] == undefined)
+            if (match[4] == undefined)
             {
                 operand.push(parseFloat(match[0]));
             }

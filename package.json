@@ -10,16 +10,18 @@
 	"categories": [
 		"Other"
 	],
-    "activationEvents": [
-        "onLanguage:plaintext"
-    ],
+	"activationEvents": [
+		"onLanguage:plaintext"
+	],
 	"main": "./out/extension.js",
-    "contributes": {
-        "commands": [{
-            "command": "vectorcalculator.setOperand",
-            "title": "Set Operand"
-        }]
-    },
+	"contributes": {
+		"commands": [
+			{
+				"command": "vectorcalculator.setOperand",
+				"title": "Set Operand"
+			}
+		]
+	},
 	"scripts": {
 		"vscode:prepublish": "npm run compile",
 		"compile": "tsc -p ./",
@@ -42,7 +44,7 @@
 		"vscode-test": "^1.4.1"
 	},
 	"repository": {
-        "type": "git",
-        "url": "https://github.com/MaxAbernethy/vscode-vcalc"
-    }
+		"type": "git",
+		"url": "https://github.com/MaxAbernethy/vscode-vcalc"
+	}
 }
