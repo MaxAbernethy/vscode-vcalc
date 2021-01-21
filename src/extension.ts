@@ -70,6 +70,12 @@ function stringify(x:number[]): string
     }
 }
 
+// Convert a number to a 32-bit hexadecimal string with leading 0s and 0x
+function hex32(x:number)
+{
+    return '0x' + ('00000000' + x.toString(16)).substr(-8);
+}
+
 function opPairs(a:number[], b:number[], op:(a:number, b:number)=>number): number[]
 {
     // Check type compatibility
@@ -197,7 +203,7 @@ function transpose(m:number[]) : number[]
     {
         for (let j = 0; j < type.length; j++)
         {
-            result.push(m[i + j * 4]);
+            result.push(m[i + j * type.length]);
         }
     }
 
@@ -209,7 +215,7 @@ class ContentProvider implements DocumentLinkProvider
     constructor()
     {
         // Initialize regular expressions
-        let numberExprStr = "(-?\\d+\\.?\\d*f?)";
+        let numberExprStr = "((0x[0-9A-Fa-f]+)|(-?\\d+\\.?\\d*(e[+-]?\\d+)?f?))";
         this.numberExpr = new RegExp(numberExprStr, 'g');
         let sepExprStr = "[()[\\]{}=\\s]";
         this.leadingSeparatorExpr = new RegExp("^" + sepExprStr + "*");
@@ -300,6 +306,29 @@ class ContentProvider implements DocumentLinkProvider
         this.channel.appendLine(message);
     }
 
+    async append(s: string): Promise<boolean>
+    {
+        
+        if (window.activeTextEditor)
+        {
+            let doc = window.activeTextEditor.document;
+            let position: Position = new Position(doc.lineCount, doc.lineAt(doc.lineCount - 1).text.length);
+            let eol: string = (doc.eol === EndOfLine.CRLF ? '\r\n' : '\n');
+            let edited = await window.activeTextEditor.edit(function(editBuilder: TextEditorEdit)
+            {
+                editBuilder.insert(position, eol + s);
+            });
+            if (edited)
+            {
+                this.clear();
+                return true;
+            }
+        }
+        this.report('error, could not insert');
+        this.clear();
+        return false;
+    }
+
     async setOperand(operandStr: string)
     {
         // Parse the operand
@@ -311,7 +340,14 @@ class ContentProvider implements DocumentLinkProvider
             if (match === null) {
                 break;
             }
-            operand.push(parseFloat(match[0]));
+            if (match[2] == undefined)
+            {
+                operand.push(parseFloat(match[0]));
+            }
+            else
+            {
+                operand.push(parseInt(match[0]));
+            }
         }
 
         // If there was an operation in progress, complete it
@@ -387,8 +423,14 @@ class ContentProvider implements DocumentLinkProvider
             operators.push({ label: 'copy', description: resultStr });
             operators.push({ label: 'append', description: resultStr });
 
-            // Dimension-specific operations
-            if (resultType.dimensions === 1)
+            if (resultType.dimensions === 0)
+            {
+                if (Number.isInteger(result[0]) && result[0] >= 0 && result[0] <= 0xffffffff)
+                {
+                    operators.push({ label: 'hex32', description: hex32(result[0])});
+                }
+            }
+            else if (resultType.dimensions === 1)
             {
                 // Vector operations
                 let labels = ['x', 'y', 'z', 'w'];
@@ -455,23 +497,17 @@ class ContentProvider implements DocumentLinkProvider
                     break;
 
                 case 'append':
-                    if (window.activeTextEditor)
+                    if (await this.append(resultStr))
                     {
-                        let doc = window.activeTextEditor.document;
-                        let position: Position = new Position(doc.lineCount, doc.lineAt(doc.lineCount - 1).text.length);
-                        let eol: string = (doc.eol === EndOfLine.CRLF ? '\r\n' : '\n');
-                        let edited = await window.activeTextEditor.edit(function(editBuilder: TextEditorEdit)
-                        {
-                            editBuilder.insert(position, eol + resultStr);
-                        });
-                        if (edited)
-                        {
-                            this.clear();
-                            break;
-                        }
+                        break;
                     }
-                    this.report('error, could not insert');
-                    this.clear();
+                    return;
+
+                case 'hex32':
+                    if (await this.append(hex32(result[0])))
+                    {
+                        break;
+                    }
                     return;
 
                 default:
