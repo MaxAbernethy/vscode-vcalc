@@ -1,18 +1,19 @@
-# vectorcalculator
+# Vector Calculator
 
-This extension allows you to do basic linear algebra operations in-editor.
+This extension allows you to do basic calculations in the text editor.  Numbers, vectors and matrices in your text are turned into links that you can control+click to do arithmetic, trigonometry, dot and cross products, matrix multiplication, and more.
 
 ## Inputs
-The extension identifies numbers in plaintext documents and linkifies them.
-* Individual numbers are interpreted as scalars.
-* Comma-separated lists of 2, 3, or 4 numbers are interpreted as vectors.
-* Comma-separated lists of 9, 16, 25, etc. numbers are interpreted as square column-major matrices.
+The extension parses plaintext documents to find numbers and turns them into colored links.
+* Scalars are colored blue
+* Numbers grouped by () [] or {} are vectors and are colored yellow
+* Vectors of the same length grouped by () [] or {} are column-major matrices and are colored purple
 
-## Operations
-When you click a link, its value is selected and a list of operations is shown.  If you choose a unary operator, like length or reciprocal, then the result is immediately selected.  If you choose a binary operator, like add or dot, then the result will be selected after you choose another operand by clicking its link.
+## Operators
+When you click a link, its value is selected and a list of operators is shown.  Some operators are **unary**, like vector length and reciprocal, and the result will be calculated right away.  Others are **binary**, like addition or dot product, so the result will be calculated when you click another link for the second operand.  Either way, the result is selected just the same as if it were a link you clicked in the document, so you can chain together more operators.
 
 ## Outputs
-There are three ways to access the results of your operations.
-* You can use the copy operator to move the selected value to the clipboard
-* You can use the append operator to write the selected value to the end of the document
+There are a few ways to output the results of your operations.
+* The **copy** operator moves the result to the clipboard
+* The **append** operator writes the result to the end of the document
+* The **replace** operator writes the result over the first operand in the document
 * All operands and results are logged in the vcalc channel of the output panel.
