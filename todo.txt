@@ -1,8 +1,11 @@
-- vec3, and perhaps an option to convert in place / clean up
+- formatting options
+    - number of significant digits
+    - f endings
 - truncate to some readable number of significant digits
-- replace would be nice
-- maybe a little bit stricter pattern matching, like I don't need the 3 in vec3 highlighted there.  make it start with a non-alnum character and just chuck that character.
 - consider adding some extra decoration on invalid stuff that is within the bounds of a vector/matrix, like background color.  eg. if I write (1f, 2f, 3ff), highlight the 3ff to make it clear that it will be excluded and I will get a 2-vector, not a 3-vector.
+- consider adding push/pop operations, so that temporary values can be stored without writing down to the document
+- add a way to enter values into the command bar as operands, as well as constants like pi, e, etc.
+- log/exp/pow
 
 to publish updates:
 - run "vsce package" in the root directory

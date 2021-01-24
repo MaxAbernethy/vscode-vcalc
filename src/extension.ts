@@ -461,8 +461,10 @@ class ContentProvider implements DocumentLinkProvider
                 else
                 {
                     // Linkify the text
-                    let range = new Range(new Position(i, node.begin), new Position(i, node.end));
-                    let commandUri = 'command:vectorcalculator.setOperand?' + JSON.stringify(line.substr(node.begin, node.end - node.begin));
+                    let begin = new Position(i, node.begin);
+                    let end = new Position(i, node.end);
+                    let range = new Range(begin, end);
+                    let commandUri = 'command:vectorcalculator.setOperand?' + JSON.stringify([begin, end]);
                     links.push(new DocumentLink(range, Uri.parse(commandUri)));
 
                     // Add decoration
@@ -494,8 +496,23 @@ class ContentProvider implements DocumentLinkProvider
         this.channel.appendLine(message);
     }
 
-    async setOperand(operandStr: string)
+    async setOperand(range: Range)
     {
+        // Fetch the string from the document
+        if (!window.activeTextEditor)
+        {
+            return;
+        }
+        let doc = window.activeTextEditor.document;
+        let operandStr = doc.getText(range);
+
+        // Save the source so that we can overwrite it later
+        if (!this.operand.valid)
+        {
+            this.sourceRange = range;
+            this.sourceString = operandStr;
+        }
+
         // Parse the operand
         let x: number[] = [];
         let allHex: boolean = (this.operand.length === 0 || this.mode === ValueMode.Hexadecimal);
@@ -605,6 +622,7 @@ class ContentProvider implements DocumentLinkProvider
             // Output operations
             operators.push({ label: 'copy', description: resultStr });
             operators.push({ label: 'append', description: resultStr });
+            operators.push({ label: 'replace', description: resultStr });
 
             // Mode operations
             let isIntegral: boolean = true;
@@ -635,6 +653,10 @@ class ContentProvider implements DocumentLinkProvider
                 for (let i = 0; i < result.length; i++)
                 {
                     operators.push({ label: labels[i], description : result[i].toString()});
+                }
+                if (result.length > 3)
+                {
+                    operators.push({ label: 'xyz', description : result.slice(0, 3).toString()});
                 }
                 operators.push({ label: 'length', description: stringify(magnitude(result), this.mode) });
                 operators.push({ label: 'normalize', description: stringify(normalize(result), this.mode) });
@@ -699,6 +721,7 @@ class ContentProvider implements DocumentLinkProvider
                 case 'y': result = Value.scalar(result[1]); continue;
                 case 'z': result = Value.scalar(result[2]); continue;
                 case 'w': result = Value.scalar(result[3]); continue;
+                case 'xyz': result = new Value(result.slice(0, 3)); continue;
                 
                 case 'length': result = magnitude(result); continue;
                 case 'normalize': result = normalize(result); continue;
@@ -743,6 +766,36 @@ class ContentProvider implements DocumentLinkProvider
                     this.report('error, could not insert');
                     this.clear();
                     return;
+                    
+                case 'replace':
+                    
+                    if (window.activeTextEditor)
+                    {
+                        let doc = window.activeTextEditor.document;
+
+                        // Check that the source text didn't change
+                        let range = this.sourceRange;
+                        if (doc.getText(range) !== this.sourceString)
+                        {
+                            this.report('error, could not replace - the document changed');
+                            this.clear();
+                            return;
+                        }
+
+                        // Replace the source text with the result
+                        let edited = await window.activeTextEditor.edit(function(editBuilder: TextEditorEdit)
+                        {
+                            editBuilder.replace(range, resultStr);
+                        });
+                        if (edited)
+                        {
+                            this.clear();
+                            break;
+                        }
+                    }
+                    this.report('error, could not replace');
+                    this.clear();
+                    return;
 
                 // Mode
                 case 'decimal': this.mode = ValueMode.Decimal; continue;
@@ -780,12 +833,17 @@ class ContentProvider implements DocumentLinkProvider
     {
         this.operand = Value.invalid;
         this.operator = '';
+        this.sourceString = '';
     }
 
     // Currently selected operand / operator
     operand: Value = Value.invalid;
     operator: string = '';
     mode: ValueMode = ValueMode.Decimal;
+
+    // Location in the document of the first operand of the current chain of operations
+    sourceRange: Range = new Range(new Position(0, 0), new Position(0, 0));
+    sourceString: String = '';
 
     // Regular expressions
     numberExpr: RegExp;
@@ -816,8 +874,9 @@ export function activate(context: ExtensionContext)
 
     context.subscriptions.push(providerRegistrations);
 
-    let disposable = commands.registerCommand('vectorcalculator.setOperand', (operand) => {
-        provider.setOperand(operand);
+    let disposable = commands.registerCommand('vectorcalculator.setOperand', (begin: Position, end: Position) => {
+        let range = new Range(new Position(begin.line, begin.character), new Position(end.line, end.character));
+        provider.setOperand(range);
     });
     
     context.subscriptions.push(disposable);
