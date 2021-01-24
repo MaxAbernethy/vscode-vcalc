@@ -246,6 +246,161 @@ function transpose(m:number[]) : number[]
     return result;
 }
 
+
+enum ParseNodeType
+{
+    None,
+    Scalar,
+    Vector,
+    Matrix
+};
+
+class ParseNode
+{
+    constructor(begin: number, delim: string)
+    {
+        this.begin = begin;
+        switch (delim)
+        {
+            case '{': this.delim = '}'; break;
+            case '[': this.delim = ']'; break;
+            case '(': this.delim = ')'; break;
+        }
+    }
+
+    close(end: number, parent: ParseNode)
+    {
+        // Remove this if it's empty
+        this.end = end;
+        if (this.items.length == 0)
+        {
+            return;
+        }
+
+        // Check for uniformity of children
+        let type = this.items[0].type;
+        let count = this.items[0].items.length;
+        for (let i = 1; i < this.items.length; i++)
+        {
+            if (this.items[i].type != type)
+            {
+                type = ParseNodeType.None;
+            }
+            if (this.items[i].items.length != count)
+            {
+                count = -1;
+            }
+        }
+
+        // Check if this is a list of scalars or a list of vectors with the same length
+        if (type == ParseNodeType.Scalar)
+        {
+            if (this.items.length == 1)
+            {
+                // Convert 1-vector to scalar
+                this.type = ParseNodeType.Scalar;
+                this.items = [];
+            }
+            else
+            {
+                // N-vector
+                this.type = ParseNodeType.Vector;
+            }
+        }
+        else if (type == ParseNodeType.Vector && count > 1)
+        {
+            if (this.items.length == 1)
+            {
+                // Convert Nx1 matrix to vector
+                this.type = ParseNodeType.Vector;
+                this.items = this.items[0].items;
+            }
+            else
+            {
+                // NxM matrix
+                this.type = ParseNodeType.Matrix;
+            }
+        } // else type remains none
+
+        if (parent != null)
+        {
+            parent.items.push(this);
+        }
+    }
+
+    type: ParseNodeType = ParseNodeType.None;
+    begin: number = -1;
+    end: number = -1;
+    delim: string = '';
+    items: ParseNode[] = [];
+}
+
+function parse(line: string)
+{
+    let nodes:ParseNode[] = [new ParseNode(0, '')];
+    let i:number = 0;
+    let valid:boolean = true;
+    while (i < line.length)
+    {
+        let c = line[i];
+
+        if ('[({'.indexOf(c) >= 0)
+        {
+            // Opening delimiter - create a new node
+            nodes.push(new ParseNode(i, c));
+            valid = true;
+        }
+        else if (c == nodes[nodes.length - 1].delim)
+        {
+            // Closing delimiter - close a node
+            let node = nodes.pop();
+            if (node) // should always be defined, but TS complains
+            {
+                node.close(i + 1, nodes[nodes.length - 1]);
+            }
+            valid = true;
+        }
+        else if (valid)
+        {
+            // Alphabetic character - wait for a non-alphanumeric
+            if (c.search(/[a-zA-Z]/) >= 0)
+            {
+                valid = false;
+            }
+
+            // Numeric character or sign - try to consume a number
+            if (c.search(/[0-9-]/) >= 0)
+            {
+                // Search the line beginning from the current position
+                // Match: beginning of string, [2]hex or [3]dec with optional [4]exponent, [5]non-alphanumeric or end of string
+                let match = line.substr(i).match(/^((0x[0-9A-Fa-f]+)|(-?\d+\.?\d*(e[+-]?\d+)?f?))([^a-zA-Z0-9]|$)/);
+                if (match != null)
+                {
+                    let next = i + match[0].length - match[5].length;
+                    let number = new ParseNode(i, '');
+                    number.end = next;
+                    number.type = ParseNodeType.Scalar;
+                    nodes[nodes.length - 1].items.push(number);
+                    i = next;
+                    continue;
+                }
+                else
+                {
+                    valid = false;
+                }
+            }
+        }
+        else if (c.search(/[^a-zA-Z0-9-]/))
+        {
+            valid = true;
+        }
+
+        i++;
+    }
+
+    return nodes[nodes.length - 1];
+}
+
 class ContentProvider implements DocumentLinkProvider
 {
     constructor()
@@ -280,62 +435,40 @@ class ContentProvider implements DocumentLinkProvider
         let matrixDecorations : DecorationOptions[] = [];
         for (let i = 0; i < document.lineCount; i++)
         {
-            let line = document.lineAt(i).text;
-            this.arrayExpr.lastIndex = 0; // reset the expression
-            while (true)
+            // Parse the line and generate links for its values
+            function linkify(node:ParseNode)
             {
-                // Search for an array of numbers on the line
-                let match = this.arrayExpr.exec(line);
-                if (match === null) {
-                    break;
-                }
-
-                // Check the length of the array, don't linkify if there is an outstanding operator and this array does not match
-                let typeA = getType(this.operand.length);
-                let typeB = getType(match[0].split(',').length);
-                switch (this.operator)
+                if (node.type == ParseNodeType.None)
                 {
-                    case 'cross': if (typeB.length !== 3) { continue; } break;
-                    case 'add':
-                    case 'subtract':
-                    case 'multiply':
-                    case 'divide':
-                    case 'dot':
-                        if (typeA.length !== typeB.length && typeA.dimensions !== 0 && typeB.dimensions !== 0)
-                        {
-                            continue;
-                        }
-                        break;
-                    default: break; // no length requirement
+                    // Recursively linkify children
+                    node.items.forEach((child: ParseNode) => { linkify(child); })
                 }
-
-                // Trim whitespace from the match
-                let leadingMatch = match[0].match(this.leadingSeparatorExpr);
-                let leadingSeparators = (leadingMatch === null ? 0 : leadingMatch[0].length);
-                let trailingMatch = match[0].match(this.trailingSeparatorExpr);
-                let trailingSeparators = (trailingMatch === null ? 0 : trailingMatch[0].length);
-
-                // Linkify the text
-                let range = new Range(new Position(i, match.index + leadingSeparators), new Position(i, match.index + match[0].length - trailingSeparators));
-                let commandUri = 'command:vectorcalculator.setOperand?' + JSON.stringify(match[0]);
-                links.push(new DocumentLink(range, Uri.parse(commandUri)));
-
-                // Add decoration
-                switch (typeB.dimensions)
+                else
                 {
-                    case 0: scalarDecorations.push({ range: range, hoverMessage: 'scalar' }); break;
-                    case 1: vectorDecorations.push({ range: range, hoverMessage: 'vector' + typeB.length }); break;
-                    case 2: matrixDecorations.push({ range: range, hoverMessage: 'matrix' + typeB.length + 'x' + typeB.length }); break;
-                    default: break;
+                    // Linkify the text
+                    let range = new Range(new Position(i, node.begin), new Position(i, node.end));
+                    let commandUri = 'command:vectorcalculator.setOperand?' + JSON.stringify(line.substr(node.begin, node.end - node.begin));
+                    links.push(new DocumentLink(range, Uri.parse(commandUri)));
+
+                    // Add decoration
+                    switch (node.type)
+                    {
+                        case ParseNodeType.Scalar: scalarDecorations.push({ range: range, hoverMessage: 'scalar' }); break;
+                        case ParseNodeType.Vector: vectorDecorations.push({ range: range, hoverMessage: 'vector' + node.items.length }); break;
+                        case ParseNodeType.Matrix: matrixDecorations.push({ range: range, hoverMessage: 'matrix' + node.items[0].items.length + 'x' + node.items.length }); break;
+                        default: break;
+                    }
                 }
             }
+            linkify(parse(document.lineAt(i).text));
+        }
 
-            if (window.activeTextEditor)
-            {
-                window.activeTextEditor.setDecorations(this.scalarDecorationType, scalarDecorations);
-                window.activeTextEditor.setDecorations(this.vectorDecorationType, vectorDecorations);
-                window.activeTextEditor.setDecorations(this.matrixDecorationType, matrixDecorations);
-            }
+        // Apply decorations
+        if (window.activeTextEditor)
+        {
+            window.activeTextEditor.setDecorations(this.scalarDecorationType, scalarDecorations);
+            window.activeTextEditor.setDecorations(this.vectorDecorationType, vectorDecorations);
+            window.activeTextEditor.setDecorations(this.matrixDecorationType, matrixDecorations);
         }
         return links;
     }
@@ -349,25 +482,29 @@ class ContentProvider implements DocumentLinkProvider
     async setOperand(operandStr: string)
     {
         // Parse the operand
-        this.numberExpr.lastIndex = 0;
         let operand: number[] = [];
         let allHex: boolean = (this.operand.length === 0 || this.mode === ValueMode.Hexadecimal);
-        while (true)
+        function enumerate(node: ParseNode)
         {
-            let match = this.numberExpr.exec(operandStr);
-            if (match === null) {
-                break;
-            }
-            if (match[4] == undefined)
+            if (node.type == ParseNodeType.Scalar)
             {
-                operand.push(parseFloat(match[3]));
-                allHex = false;
+                let numberStr = operandStr.substr(node.begin, node.end - node.begin);
+                if (numberStr.substr(0, 2) == '0x')
+                {
+                    operand.push(parseInt(numberStr));
+                }
+                else
+                {
+                    operand.push(parseFloat(numberStr));
+                    allHex = false;
+                }
             }
             else
             {
-                operand.push(parseInt(match[3]));
+                node.items.forEach((node: ParseNode) => enumerate(node));
             }
         }
+        enumerate(parse(operandStr));
         this.mode = (allHex ? ValueMode.Hexadecimal : ValueMode.Decimal);
 
         // If there was an operation in progress, complete it
