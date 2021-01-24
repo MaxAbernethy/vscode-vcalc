@@ -650,7 +650,7 @@ class ContentProvider implements DocumentLinkProvider
             {
                 // Vector operations
                 let labels = ['x', 'y', 'z', 'w'];
-                for (let i = 0; i < result.length; i++)
+                for (let i = 0; i < Math.min(result.length, labels.length); i++)
                 {
                     operators.push({ label: labels[i], description : result[i].toString()});
                 }
