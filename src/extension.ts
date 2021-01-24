@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/naming-convention */
 'use strict';
 import { ExtensionContext, CancellationToken, DecorationOptions, Disposable, DocumentLink, DocumentLinkProvider,
     OutputChannel, Position, QuickPickItem, Range, TextDocument, TextEditorDecorationType, TextEditorEdit, Uri, 
