@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 'use strict';
 import { ExtensionContext, CancellationToken, DecorationOptions, Disposable, DocumentLink, DocumentLinkProvider,
     OutputChannel, Position, QuickPickItem, Range, TextDocument, TextEditorDecorationType, TextEditorEdit, Uri, 
@@ -72,7 +73,7 @@ function stringifyVector(x:number[], mode:ValueMode)
             vector += ', ';
         }
     }
-    return vector + ')'
+    return vector + ')';
 }
 
 function stringify(x:number[], mode: ValueMode): string
@@ -272,7 +273,7 @@ class ParseNode
     {
         // Remove this if it's empty
         this.end = end;
-        if (this.items.length == 0)
+        if (this.items.length === 0)
         {
             return;
         }
@@ -282,20 +283,20 @@ class ParseNode
         let count = this.items[0].items.length;
         for (let i = 1; i < this.items.length; i++)
         {
-            if (this.items[i].type != type)
+            if (this.items[i].type !== type)
             {
                 type = ParseNodeType.None;
             }
-            if (this.items[i].items.length != count)
+            if (this.items[i].items.length !== count)
             {
                 count = -1;
             }
         }
 
         // Check if this is a list of scalars or a list of vectors with the same length
-        if (type == ParseNodeType.Scalar)
+        if (type === ParseNodeType.Scalar)
         {
-            if (this.items.length == 1)
+            if (this.items.length === 1)
             {
                 // Convert 1-vector to scalar
                 this.type = ParseNodeType.Scalar;
@@ -307,9 +308,9 @@ class ParseNode
                 this.type = ParseNodeType.Vector;
             }
         }
-        else if (type == ParseNodeType.Vector && count > 1)
+        else if (type === ParseNodeType.Vector && count > 1)
         {
-            if (this.items.length == 1)
+            if (this.items.length === 1)
             {
                 // Convert Nx1 matrix to vector
                 this.type = ParseNodeType.Vector;
@@ -322,7 +323,7 @@ class ParseNode
             }
         } // else type remains none
 
-        if (parent != null)
+        if (parent !== null)
         {
             parent.items.push(this);
         }
@@ -350,7 +351,7 @@ function parse(line: string)
             nodes.push(new ParseNode(i, c));
             valid = true;
         }
-        else if (c == nodes[nodes.length - 1].delim)
+        else if (c === nodes[nodes.length - 1].delim)
         {
             // Closing delimiter - close a node
             let node = nodes.pop();
@@ -374,7 +375,7 @@ function parse(line: string)
                 // Search the line beginning from the current position
                 // Match: beginning of string, [2]hex or [3]dec with optional [4]exponent, [5]non-alphanumeric or end of string
                 let match = line.substr(i).match(/^((0x[0-9A-Fa-f]+)|(-?\d+\.?\d*(e[+-]?\d+)?f?))([^a-zA-Z0-9]|$)/);
-                if (match != null)
+                if (match !== null)
                 {
                     let next = i + match[0].length - match[5].length;
                     let number = new ParseNode(i, '');
@@ -436,12 +437,13 @@ class ContentProvider implements DocumentLinkProvider
         for (let i = 0; i < document.lineCount; i++)
         {
             // Parse the line and generate links for its values
+            let line = document.lineAt(i).text;
             function linkify(node:ParseNode)
             {
-                if (node.type == ParseNodeType.None)
+                if (node.type === ParseNodeType.None)
                 {
                     // Recursively linkify children
-                    node.items.forEach((child: ParseNode) => { linkify(child); })
+                    node.items.forEach((child: ParseNode) => { linkify(child); });
                 }
                 else
                 {
@@ -460,7 +462,7 @@ class ContentProvider implements DocumentLinkProvider
                     }
                 }
             }
-            linkify(parse(document.lineAt(i).text));
+            linkify(parse(line));
         }
 
         // Apply decorations
@@ -486,10 +488,10 @@ class ContentProvider implements DocumentLinkProvider
         let allHex: boolean = (this.operand.length === 0 || this.mode === ValueMode.Hexadecimal);
         function enumerate(node: ParseNode)
         {
-            if (node.type == ParseNodeType.Scalar)
+            if (node.type === ParseNodeType.Scalar)
             {
                 let numberStr = operandStr.substr(node.begin, node.end - node.begin);
-                if (numberStr.substr(0, 2) == '0x')
+                if (numberStr.substr(0, 2) === '0x')
                 {
                     operand.push(parseInt(numberStr));
                 }
@@ -638,7 +640,7 @@ class ContentProvider implements DocumentLinkProvider
             let unaryOp = (label: string, op: (x: number[]) => number[]) => 
             {
                 return { label: label, description: stringify(op(result), this.mode) };
-            }
+            };
             operators.push(unaryOp('square', square));
             operators.push(unaryOp('sqrt', sqrt));
             operators.push(unaryOp('reciprocal', reciprocal));
