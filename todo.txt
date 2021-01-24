@@ -2,7 +2,7 @@
 - truncate to some readable number of significant digits
 - replace would be nice
 - maybe a little bit stricter pattern matching, like I don't need the 3 in vec3 highlighted there.  make it start with a non-alnum character and just chuck that character.
-
+- consider adding some extra decoration on invalid stuff that is within the bounds of a vector/matrix, like background color.  eg. if I write (1f, 2f, 3ff), highlight the 3ff to make it clear that it will be excluded and I will get a 2-vector, not a 3-vector.
 
 to publish updates:
 - run "vsce package" in the root directory

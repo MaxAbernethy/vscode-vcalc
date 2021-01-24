@@ -5,51 +5,78 @@ import { ExtensionContext, CancellationToken, DecorationOptions, Disposable, Doc
 
 let vscode = require('vscode');
 
-class ValueType
+// Scalar, vector, or matrix. Matrices are stored in column-major order
+class Value extends Array<number>
 {
-    constructor(dimensions:number, length:number)
+    constructor(x: number[] = [0], rows: number = x.length)
     {
-        this.dimensions = dimensions;
-        this.length = length;
+        super(x.length);
+        for (let i = 0; i < x.length; i++)
+        {
+            this[i] = x[i];
+        }
+        this.rows = rows;
     }
 
-    valid():boolean
+    static scalar(x: number) : Value
     {
-        return (this.length > 0);
+        return new Value([x]);
     }
 
-    dimensions:number = 0;  // 0 scalar, 1 vector, 2 matrix
-    length:number = 0;
+    static get invalid() : Value
+    {
+        return new Value([], 0);
+    }
+
+    get valid()
+    {
+        return this.rows > 0;
+    }
+
+    get dimensions(): number
+    {
+        if (this.length === 1)
+        {
+            return 0;
+        }
+        if (this.length === this.rows)
+        {
+            return 1;
+        }
+        if (this.length % this.rows === 0)
+        {
+            return 2;
+        }
+        return -1; // invalid
+    }
+
+    get cols(): number
+    {
+        return this.length / this.rows;
+    }
+
+    col(i: number): Value
+    {
+        return new Value(this.slice(i * this.rows, (i + 1) * this.rows));
+    }
+
+    index(row: number, col: number)
+    {
+        return col * this.rows + row;
+    }
+
+    entry(row: number, col: number): number
+    {
+        return this[this.index(row, col)];
+    }
+
+    rows: number;
 }
 
 enum ValueMode
 {
     Decimal,
     Hexadecimal
-}
-
-function getType(length:number) : ValueType
-{
-    // Scalar
-    if (length === 1)
-    {
-        return new ValueType(0, 1);
-    }
-
-    // 2-, 3-, or 4- Vector
-    if (length <= 4)
-    {
-        return new ValueType(1, length);
-    }
-
-    // NxN matrix, n >= 3
-    let sqrt = Math.sqrt(length);
-    if (sqrt === Math.floor(sqrt))
-    {
-        return new ValueType(2, sqrt);
-    }
-
-    return new ValueType(0, 0); // invalid
 }
 
 function stringifyScalar(x:number, mode:ValueMode)
@@ -75,20 +102,19 @@ function stringifyVector(x:number[], mode:ValueMode)
     return vector + ')';
 }
 
-function stringify(x:number[], mode: ValueMode): string
+function stringify(x:Value, mode: ValueMode): string
 {
-    let type = getType(x.length);
-    switch(type.dimensions)
+    switch(x.dimensions)
     {
         case 0: return stringifyScalar(x[0], mode);
         case 1: return stringifyVector(x, mode);
         case 2:
         {
             let matrix = '(';
-            for (let i = 0; i < type.length; i++)
+            for (let i = 0; i < x.cols; i++)
             {
-                matrix += stringifyVector(x.slice(i * type.length, (i + 1) * type.length), mode);
-                if (i < type.length - 1)
+                matrix += stringifyVector(x.col(i), mode);
+                if (i < x.cols - 1)
                 {
                     matrix += ', ';
                 }
@@ -99,14 +125,12 @@ function stringify(x:number[], mode: ValueMode): string
     }
 }
 
-function opPairs(a:number[], b:number[], op:(a:number, b:number)=>number): number[]
+function opPairs(a:Value, b:Value, op:(a:number, b:number)=>number): Value
 {
-    // Check type compatibility
-    let typeA = getType(a.length);
-    let typeB = getType(b.length);
-    if (typeA.length !== typeB.length && typeA.dimensions !== 0 && typeB.dimensions !== 0)
+    // Check type compatibility -- requires equal dimension matrices, equal length vectors, or at least one scalar
+    if ((a.length !== b.length || a.rows !== b.rows) && a.dimensions !== 0 && b.dimensions !== 0)
     {
-        return [];
+        return Value.invalid;
     }
 
     // Apply op
@@ -116,140 +140,124 @@ function opPairs(a:number[], b:number[], op:(a:number, b:number)=>number): numbe
     {
         result.push(op(a[i % a.length], b[i % b.length]));
     }
-    return result;
+
+    return new Value(result, Math.max(a.rows, b.rows));
 }
 
-function matrixMultiply(m:number[], x:number[]): number[]
+function matrixMultiply(left:Value, right:Value): Value
 {
-    let typeM = getType(m.length);
-    let typeX = getType(x.length);
-
-    if (typeM.length !== typeX.length)
+    if (left.cols !== right.rows)
     {
-        return [];
+        return Value.invalid;
     }
-
+    
     let result: number[] = [];
-    for (let i = 0; i < x.length; i++)
+    for (let i = 0; i < right.cols; i++)
     {
-        let offsetM = i % typeM.length;
-        let offsetX = Math.floor(i / typeM.length) * typeM.length;
-        let sum = 0;
-        for (let j = 0; j < typeM.length; j++)
+        for (let j = 0; j < left.rows; j++)
         {
-            sum += m[offsetM + j * typeM.length] * x[offsetX + j];
+            let sum = 0;
+            for (let k = 0; k < left.cols; k++)
+            {
+                sum += left.entry(j, k) * right.entry(k, i);
+            }
+            result.push(sum);
         }
-        result.push(sum);
     }
-    return result;
+    return new Value(result, left.rows);
 }
 
-function magnitude(x:number[]):number
+function magnitude(x: Value): Value
 {
+    if (x.dimensions !== 1)
+    {
+        return Value.invalid;
+    }
+
     let lengthSquared = 0;
     for (let i = 0; i < x.length; i++)
     {
         lengthSquared += x[i] * x[i];
     }
-    return Math.sqrt(lengthSquared);
+    return Value.scalar(Math.sqrt(lengthSquared));
 }
 
-function unary(x:number[], op:(x:number) => number)
+function unary(x:Value, op:(x:number) => number): Value
 {
     let y: number[] = [];
     x.forEach(function(x: number) { y.push(op(x)); });
-    return y;
+    return new Value(y, x.rows);
 }
 
-let square = (x:number[]) => unary(x, (x:number) => x * x);
-let sqrt = (x:number[]) => unary(x, (x:number) => Math.sqrt(x));
-let reciprocal = (x:number[]) => unary(x, (x:number) => 1.0 / x);
-let negate = (x:number[]) => unary(x, (x:number) => -x);
-let sin = (x:number[]) => unary(x, (x:number) => Math.sin(x));
-let cos = (x:number[]) => unary(x, (x:number) => Math.cos(x));
-let tan = (x:number[]) => unary(x, (x:number) => Math.tan(x));
-let asin = (x:number[]) => unary(x, (x:number) => Math.asin(x));
-let acos = (x:number[]) => unary(x, (x:number) => Math.acos(x));
-let atan = (x:number[]) => unary(x, (x:number) => Math.atan(x));
-let rad2deg = (x:number[]) => unary(x, (x:number) => x * 180.0 / Math.PI);
-let deg2rad = (x:number[]) => unary(x, (x:number) => x * Math.PI / 180.0);
+let square = (x:Value) => unary(x, (x:number) => x * x);
+let sqrt = (x:Value) => unary(x, (x:number) => Math.sqrt(x));
+let reciprocal = (x:Value) => unary(x, (x:number) => 1.0 / x);
+let negate = (x:Value) => unary(x, (x:number) => -x);
+let sin = (x:Value) => unary(x, (x:number) => Math.sin(x));
+let cos = (x:Value) => unary(x, (x:number) => Math.cos(x));
+let tan = (x:Value) => unary(x, (x:number) => Math.tan(x));
+let asin = (x:Value) => unary(x, (x:number) => Math.asin(x));
+let acos = (x:Value) => unary(x, (x:number) => Math.acos(x));
+let atan = (x:Value) => unary(x, (x:number) => Math.atan(x));
+let rad2deg = (x:Value) => unary(x, (x:number) => x * 180.0 / Math.PI);
+let deg2rad = (x:Value) => unary(x, (x:number) => x * Math.PI / 180.0);
 
-function normalize(x:number[]): number[]
+function normalize(x:Value): Value
 {
-    let invLength = 1.0 / magnitude(x);
-    let n: number[] = [];
-    x.forEach(function(x: number) { n.push(x * invLength); });
-    return n;
-}
-
-function dot(a:number[], b:number[]): number[]
-{
-    let typeA = getType(a.length);
-    let typeB = getType(b.length);
-    if (typeA.length !== typeB.length && typeA.dimensions !== 0 && typeB.dimensions !== 0)
+    if (x.dimensions !== 1)
     {
-        return [];
+        return Value.invalid;
+    }
+    let invLength = 1.0 / magnitude(x)[0];
+    return unary(x, (x: number) => x * invLength);
+}
+
+function dot(a:Value, b:Value): Value
+{
+    if (a.length !== b.length || a.dimensions !== 1 || b.dimensions !== 1)
+    {
+        return Value.invalid;
     }
 
     let sum = 0;
     let length = Math.max(a.length, b.length);
     for (let i = 0; i < length; i++)
     {
-        sum += a[i % a.length] * b[i % b.length];
+        sum += a[i] * b[i];
     }
-    return [sum];
+    return Value.scalar(sum);
 }
 
-function cross(a:number[], b:number[]): number[]
+function cross(a:Value, b:Value): Value
 {
-    if (a.length !== 3 || b.length !== 3)
+    if (a.dimensions !==1 || b.dimensions !== 1 || a.length !== 3 || b.length !== 3)
     {
-        return [];
+        return Value.invalid;
     }
 
-    return [
+    return new Value([
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],
         a[0] * b[1] - a[1] * b[0]
-    ];
+    ]);
 }
 
-function column(m:number[], c: number) : number[]
+function transpose(x: Value) : Value
 {
-    let type = getType(m.length);
-    if (type.dimensions !== 2 || c !== Math.floor(c) || c < 0 || c >= type.length)
+    let y = new Value(x, x.cols);
+    for (let i = 0; i < x.rows; i++)
     {
-        return [];
-    }
-
-    let start = type.length * c;
-    return m.slice(start, start + type.length);
-}
-
-function transpose(m:number[]) : number[]
-{
-    let type = getType(m.length);
-    if (type.dimensions !== 2)
-    {
-        return [];
-    }
-
-    let result: number[] = [];
-    for (let i = 0; i < type.length; i++)
-    {
-        for (let j = 0; j < type.length; j++)
+        for (let j = 0; j < x.cols; j++)
         {
-            result.push(m[i + j * type.length]);
+            y[y.index(j, i)] = x.entry(i, j);
         }
     }
-
-    return result;
+    return y;
 }
-
 
 enum ParseNodeType
 {
-    None,
+    List,
     Scalar,
     Vector,
     Matrix
@@ -284,7 +292,7 @@ class ParseNode
         {
             if (this.items[i].type !== type)
             {
-                type = ParseNodeType.None;
+                type = ParseNodeType.List;
             }
             if (this.items[i].items.length !== count)
             {
@@ -328,7 +336,7 @@ class ParseNode
         }
     }
 
-    type: ParseNodeType = ParseNodeType.None;
+    type: ParseNodeType = ParseNodeType.List;
     begin: number = -1;
     end: number = -1;
     delim: string = '';
@@ -390,7 +398,7 @@ function parse(line: string)
                 }
             }
         }
-        else if (c.search(/[^a-zA-Z0-9-]/))
+        else if (c.search(/[^a-zA-Z0-9-]/) >= 0)
         {
             valid = true;
         }
@@ -398,7 +406,13 @@ function parse(line: string)
         i++;
     }
 
-    return nodes[nodes.length - 1];
+    // Shed singleton lists
+    let node = nodes[nodes.length - 1];
+    while (node.type === ParseNodeType.List && node.items.length === 1)
+    {
+        node = node.items[0];
+    }
+    return node;
 }
 
 class ContentProvider implements DocumentLinkProvider
@@ -439,7 +453,7 @@ class ContentProvider implements DocumentLinkProvider
             let line = document.lineAt(i).text;
             function linkify(node:ParseNode)
             {
-                if (node.type === ParseNodeType.None)
+                if (node.type === ParseNodeType.List)
                 {
                     // Recursively linkify children
                     node.items.forEach((child: ParseNode) => { linkify(child); });
@@ -483,7 +497,7 @@ class ContentProvider implements DocumentLinkProvider
     async setOperand(operandStr: string)
     {
         // Parse the operand
-        let operand: number[] = [];
+        let x: number[] = [];
         let allHex: boolean = (this.operand.length === 0 || this.mode === ValueMode.Hexadecimal);
         function enumerate(node: ParseNode)
         {
@@ -492,11 +506,11 @@ class ContentProvider implements DocumentLinkProvider
                 let numberStr = operandStr.substr(node.begin, node.end - node.begin);
                 if (numberStr.substr(0, 2) === '0x')
                 {
-                    operand.push(parseInt(numberStr));
+                    x.push(parseInt(numberStr));
                 }
                 else
                 {
-                    operand.push(parseFloat(numberStr));
+                    x.push(parseFloat(numberStr));
                     allHex = false;
                 }
             }
@@ -505,26 +519,38 @@ class ContentProvider implements DocumentLinkProvider
                 node.items.forEach((node: ParseNode) => enumerate(node));
             }
         }
-        enumerate(parse(operandStr));
+        let tree = parse(operandStr); 
+        enumerate(tree);
         this.mode = (allHex ? ValueMode.Hexadecimal : ValueMode.Decimal);
+        let rows: number;
+        switch(tree.type)
+        {
+            case ParseNodeType.Scalar: rows = 1; break;
+            case ParseNodeType.Vector: rows = x.length; break;
+            case ParseNodeType.Matrix: rows = x.length / tree.items.length; break;
+            default:
+                this.report('error');
+                this.clear();
+                return;
+        }
+        let operand = new Value(x, rows);
 
         // If there was an operation in progress, complete it
-        let result: number[] = [];
+        let result: Value;
         switch(this.operator)
         {
-            // Arithmetic
+            // Arithmetic -- except for matrix-matrix and matrix-vector multiply, all are done component-wise
             case 'add': result = opPairs(this.operand, operand, function(a:number, b:number):number { return a + b; }); break;
             case 'subtract': result = opPairs(this.operand, operand, function(a:number, b:number):number { return a - b; }); break;
             case 'divide': result = opPairs(this.operand, operand, function(a:number, b:number):number { return a / b; }); break;
             case 'multiply':
             {
-                let typeA = getType(this.operand.length);
-                let typeB = getType(operand.length);
-                if (typeA.dimensions === 2 && typeB.dimensions !== 0)
+                if (this.operand.dimensions === 2 && operand.dimensions !== 0)
                 {
+                    // matrix times matrix or vector
                     result = matrixMultiply(this.operand, operand);
                 }
-                else if (typeB.dimensions === 2 && typeA.dimensions !== 0)
+                else if (operand.dimensions === 2 && this.operand.dimensions !== 0)
                 {
                     // vector times matrix, just reverse the order so it works
                     result = matrixMultiply(operand, this.operand);
@@ -544,7 +570,7 @@ class ContentProvider implements DocumentLinkProvider
         }
 
         // Check for an error, eg. mismatched operands
-        if (result.length === 0)
+        if (!result.valid)
         {
             this.report('error');
             this.clear();
@@ -575,7 +601,6 @@ class ContentProvider implements DocumentLinkProvider
 
             // Build the operator list
             let operators: QuickPickItem[] = [];
-            let resultType = getType(result.length);
 
             // Output operations
             operators.push({ label: 'copy', description: resultStr });
@@ -603,15 +628,15 @@ class ContentProvider implements DocumentLinkProvider
                 }
             }
 
-            if (resultType.dimensions === 1)
+            if (result.dimensions === 1)
             {
                 // Vector operations
                 let labels = ['x', 'y', 'z', 'w'];
-                for (let i = 0; i < resultType.length; i++)
+                for (let i = 0; i < result.length; i++)
                 {
                     operators.push({ label: labels[i], description : result[i].toString()});
                 }
-                operators.push({ label: 'length', description: magnitude(result).toString() });
+                operators.push({ label: 'length', description: stringify(magnitude(result), this.mode) });
                 operators.push({ label: 'normalize', description: stringify(normalize(result), this.mode) });
                 operators.push({ label: 'dot' });
                 if (result.length === 3)
@@ -619,12 +644,12 @@ class ContentProvider implements DocumentLinkProvider
                     operators.push({ label: 'cross' });
                 }
             }
-            else if (resultType.dimensions === 2)
+            else if (result.dimensions === 2)
             {
                 // Matrix operations
-                for (let i = 0; i < resultType.length; i++)
+                for (let i = 0; i < result.cols; i++)
                 {
-                    operators.push({ label: 'col' + i, description: stringify(column(result, i), this.mode)});
+                    operators.push({ label: 'col' + i, description: stringify(result.col(i), this.mode)});
                 }
                 operators.push({ label: 'transpose', description: stringify(transpose(result), this.mode)});
             }
@@ -636,7 +661,7 @@ class ContentProvider implements DocumentLinkProvider
             operators.push({ label: 'divide' });
 
             // Common unary operations
-            let unaryOp = (label: string, op: (x: number[]) => number[]) => 
+            let unaryOp = (label: string, op: (x: Value) => Value) => 
             {
                 return { label: label, description: stringify(op(result), this.mode) };
             };
@@ -670,12 +695,12 @@ class ContentProvider implements DocumentLinkProvider
             switch (operator.label)
             {
                 // Vector component selection
-                case 'x': result = [result[0]]; continue;
-                case 'y': result = [result[1]]; continue;
-                case 'z': result = [result[2]]; continue;
-                case 'w': result = [result[3]]; continue;
+                case 'x': result = Value.scalar(result[0]); continue;
+                case 'y': result = Value.scalar(result[1]); continue;
+                case 'z': result = Value.scalar(result[2]); continue;
+                case 'w': result = Value.scalar(result[3]); continue;
                 
-                case 'length': result = [magnitude(result)]; continue;
+                case 'length': result = magnitude(result); continue;
                 case 'normalize': result = normalize(result); continue;
                 case 'transpose': result = transpose(result); continue;
 
@@ -729,8 +754,7 @@ class ContentProvider implements DocumentLinkProvider
                         let colMatch = operator.label.match(/^col(\d+)$/);
                         if (colMatch !== null)
                         {
-                            let col = parseInt(colMatch[1]);
-                            result = column(result, col);
+                            result = result.col(parseInt(colMatch[1]));
                             continue;
                         }
                     }
@@ -754,12 +778,12 @@ class ContentProvider implements DocumentLinkProvider
 
     clear()
     {
-        this.operand = [];
+        this.operand = Value.invalid;
         this.operator = '';
     }
 
     // Currently selected operand / operator
-    operand: number[] = [];
+    operand: Value = Value.invalid;
     operator: string = '';
     mode: ValueMode = ValueMode.Decimal;
 
