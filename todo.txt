@@ -1,5 +1,3 @@
-- neg operation
-- needs trigonometry, deg rad conversion
 - vec3, and perhaps an option to convert in place / clean up
 - truncate to some readable number of significant digits
 - replace would be nice

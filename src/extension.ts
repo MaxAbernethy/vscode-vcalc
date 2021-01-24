@@ -154,12 +154,25 @@ function magnitude(x:number[]):number
     return Math.sqrt(lengthSquared);
 }
 
-function reciprocal(x:number[]): number[]
+function unary(x:number[], op:(x:number) => number)
 {
-    let rcp: number[] = [];
-    x.forEach(function(x: number) { rcp.push(1.0 / x); });
-    return rcp;
+    let y: number[] = [];
+    x.forEach(function(x: number) { y.push(op(x)); });
+    return y;
 }
+
+let square = (x:number[]) => unary(x, (x:number) => x * x);
+let sqrt = (x:number[]) => unary(x, (x:number) => Math.sqrt(x));
+let reciprocal = (x:number[]) => unary(x, (x:number) => 1.0 / x);
+let negate = (x:number[]) => unary(x, (x:number) => -x);
+let sin = (x:number[]) => unary(x, (x:number) => Math.sin(x));
+let cos = (x:number[]) => unary(x, (x:number) => Math.cos(x));
+let tan = (x:number[]) => unary(x, (x:number) => Math.tan(x));
+let asin = (x:number[]) => unary(x, (x:number) => Math.asin(x));
+let acos = (x:number[]) => unary(x, (x:number) => Math.acos(x));
+let atan = (x:number[]) => unary(x, (x:number) => Math.atan(x));
+let rad2deg = (x:number[]) => unary(x, (x:number) => x * 180.0 / Math.PI);
+let deg2rad = (x:number[]) => unary(x, (x:number) => x * Math.PI / 180.0);
 
 function normalize(x:number[]): number[]
 {
@@ -478,12 +491,29 @@ class ContentProvider implements DocumentLinkProvider
                 operators.push({ label: 'transpose', description: stringify(transpose(result), this.mode)});
             }
 
-            // Common operations
+            // Common binary operations
             operators.push({ label: 'add' });
             operators.push({ label: 'subtract' });
             operators.push({ label: 'multiply' });
             operators.push({ label: 'divide' });
-            operators.push({ label: 'reciprocal', description: stringify(reciprocal(result), this.mode) });
+
+            // Common unary operations
+            let unaryOp = (label: string, op: (x: number[]) => number[]) => 
+            {
+                return { label: label, description: stringify(op(result), this.mode) };
+            }
+            operators.push(unaryOp('square', square));
+            operators.push(unaryOp('sqrt', sqrt));
+            operators.push(unaryOp('reciprocal', reciprocal));
+            operators.push(unaryOp('negate', negate));
+            operators.push(unaryOp('sin', sin));
+            operators.push(unaryOp('cos', cos));
+            operators.push(unaryOp('tan', tan));
+            operators.push(unaryOp('asin', asin));
+            operators.push(unaryOp('acos', acos));
+            operators.push(unaryOp('atan', atan));
+            operators.push(unaryOp('rad->deg', rad2deg));
+            operators.push(unaryOp('deg->rad', deg2rad));
 
             // Choose an operator
             let operator = await window.showQuickPick(operators);
@@ -508,9 +538,21 @@ class ContentProvider implements DocumentLinkProvider
                 case 'w': result = [result[3]]; continue;
                 
                 case 'length': result = [magnitude(result)]; continue;
-                case 'reciprocal': result = reciprocal(result); continue;
                 case 'normalize': result = normalize(result); continue;
                 case 'transpose': result = transpose(result); continue;
+
+                case 'square': result = square(result); continue;
+                case 'sqrt': result = sqrt(result); continue;
+                case 'reciprocal': result = reciprocal(result); continue;
+                case 'negate': result = negate(result); continue;
+                case 'sin': result = sin(result); continue;
+                case 'cos': result = cos(result); continue;
+                case 'tan': result = tan(result); continue;
+                case 'asin': result = asin(result); continue;
+                case 'acos': result = acos(result); continue;
+                case 'atan': result = atan(result); continue;
+                case 'rad->deg': result = rad2deg(result); continue;
+                case 'deg->rad': result = deg2rad(result); continue;
 
                 // Output
                 case 'copy':
