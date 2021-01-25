@@ -500,6 +500,50 @@ class ContentProvider implements DocumentLinkProvider
         this.channel.appendLine(message);
     }
 
+    async inputOperand()
+    {
+        // Clear unless awaiting a second operand
+        if (this.operator === '')
+        {
+            this.clear();
+        }
+
+        // Make a list of preset constants
+        let consts = new Map<string, string>();
+        consts.set('e', Math.E.toString());
+        consts.set('pi', Math.PI.toString());
+        consts.set('sqrt2', Math.sqrt(2).toString());
+        consts.set('sqrt3', Math.sqrt(3).toString());
+        consts.set('i', '(1, 0, 0)');
+        consts.set('j', '(0, 1, 0)');
+        consts.set('k', '(0, 0, 1)');
+
+        let constPicks: QuickPickItem[] = [];
+        consts.forEach((value: string, key: string) =>
+        {
+            constPicks.push({label: key, description: value});
+        });
+
+        // Let the user pick a constant or enter a value
+        let operand = await window.showQuickPick(constPicks);
+        if (operand === undefined)
+        {
+            // Clear the state
+            this.clear();
+            return;
+        }
+
+        // Check for preset constants
+        let operandStr = operand.description;
+        if (operandStr === undefined || operandStr.length === 0)
+        {
+            operandStr = operand.label;
+        }
+
+        // Set the operand
+        this.setOperandStr(operandStr);
+    }
+
     async setOperand(range: Range)
     {
         // Fetch the string from the document
@@ -517,6 +561,11 @@ class ContentProvider implements DocumentLinkProvider
             this.sourceString = operandStr;
         }
 
+        this.setOperandStr(operandStr);
+    }
+    
+    async setOperandStr(operandStr: string)
+    {
         // Parse the operand
         let x: number[] = [];
         let allHex: boolean = (this.operand.length === 0 || this.mode === ValueMode.Hexadecimal);
@@ -878,12 +927,14 @@ export function activate(context: ExtensionContext)
 
     context.subscriptions.push(providerRegistrations);
 
-    let disposable = commands.registerCommand('vectorcalculator.setOperand', (begin: Position, end: Position) => {
+    let setOperandCommand = commands.registerCommand('vectorcalculator.setOperand', (begin: Position, end: Position) => {
         let range = new Range(new Position(begin.line, begin.character), new Position(end.line, end.character));
         provider.setOperand(range);
     });
-    
-    context.subscriptions.push(disposable);
+    context.subscriptions.push(setOperandCommand);
+
+    let inputOperandCommand = commands.registerCommand('vectorcalculator.inputOperand', () => provider.inputOperand());
+    context.subscriptions.push(inputOperandCommand);
 }
 
 // this method is called when your extension is deactivated
