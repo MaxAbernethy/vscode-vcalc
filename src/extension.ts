@@ -307,6 +307,8 @@ class ParseNode
             {
                 // Convert 1-vector to scalar
                 this.type = ParseNodeType.Scalar;
+                this.begin = this.items[0].begin;
+                this.end = this.items[0].end;
                 this.items = [];
             }
             else
@@ -321,6 +323,8 @@ class ParseNode
             {
                 // Convert Nx1 matrix to vector
                 this.type = ParseNodeType.Vector;
+                this.begin = this.items[0].begin;
+                this.end = this.items[0].end;
                 this.items = this.items[0].items;
             }
             else
