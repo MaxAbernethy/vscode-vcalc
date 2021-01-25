@@ -8,6 +8,8 @@ The extension parses plaintext documents to find numbers and turns them into col
 * Numbers grouped by () [] or {} are vectors and are colored yellow
 * Vectors of the same length grouped by () [] or {} are column-major matrices and are colored purple
 
+You can also input values using the vectorcalc.inputOperand command, which also provides access to named constants like pi and e.  You will need to assign it a key binding to use it.
+
 ## Operators
 When you click a link, its value is selected and a list of operators is shown.  Some operators are **unary**, like vector length and reciprocal, and the result will be calculated right away.  Others are **binary**, like addition or dot product, so the result will be calculated when you click another link for the second operand.  Either way, the result is selected just the same as if it were a link you clicked in the document, so you can chain together more operators.
 

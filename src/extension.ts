@@ -1,6 +1,6 @@
 'use strict';
 import { ExtensionContext, CancellationToken, DecorationOptions, Disposable, DocumentLink, DocumentLinkProvider,
-    OutputChannel, Position, QuickPickItem, Range, TextDocument, TextEditorDecorationType, TextEditorEdit, Uri, 
+    OutputChannel, Position, QuickPickItem, QuickPickOptions, Range, TextDocument, TextEditorDecorationType, TextEditorEdit, Uri, 
     languages, commands, window, EndOfLine,  } from 'vscode';
 
 let vscode = require('vscode');
@@ -525,23 +525,47 @@ class ContentProvider implements DocumentLinkProvider
         });
 
         // Let the user pick a constant or enter a value
-        let operand = await window.showQuickPick(constPicks);
-        if (operand === undefined)
+        const quickPick = window.createQuickPick();
+        quickPick.placeholder = 'Input a named constant (eg. pi, sqrt2) or other value (eg. 123, (1, 2, 3))';
+        quickPick.canSelectMany = false;
+        quickPick.items = constPicks;
+        quickPick.onDidAccept(() =>
         {
-            // Clear the state
-            this.clear();
-            return;
-        }
+            let operand = quickPick.activeItems[0];
+            if (operand === undefined)
+            {
+                // Clear the state
+                this.clear();
+            }
+            else
+            {
+                // Check for preset constants
+                let operandStr = operand.description;
+                if (operandStr === undefined || operandStr.length === 0)
+                {
+                    operandStr = operand.label;
+                }
 
-        // Check for preset constants
-        let operandStr = operand.description;
-        if (operandStr === undefined || operandStr.length === 0)
+                // Set the operand
+                this.setOperandStr(operandStr);
+            }
+            quickPick.hide();
+        });
+        quickPick.onDidChangeValue(() =>
         {
-            operandStr = operand.label;
-        }
-
-        // Set the operand
-        this.setOperandStr(operandStr);
+            if (quickPick.value.length === 0 || quickPick.value[0].match(/[a-zA-Z]/))
+            {
+                // Entering a named constant
+                quickPick.items = constPicks;
+            }
+            else
+            {
+                // Entering a value
+                quickPick.items = [{ label: quickPick.value }, ...constPicks];
+            }
+        });
+        quickPick.onDidHide(() => quickPick.dispose());
+        quickPick.show();
     }
 
     async setOperand(range: Range)
@@ -754,7 +778,14 @@ class ContentProvider implements DocumentLinkProvider
             operators.push(unaryOp('deg->rad', deg2rad));
 
             // Choose an operator
-            let operator = await window.showQuickPick(operators);
+            let operandDesc = '';
+            switch (operand.dimensions)
+            {
+                case 0: operandDesc = 'Scalar'; break;
+                case 1: operandDesc = 'Vector' + operand.rows; break;
+                case 2: operandDesc = 'Matrix' + operand.rows + 'x' + operand.cols; break;
+            }
+            let operator = await window.showQuickPick(operators, {placeHolder: operandDesc + ' operator'});
             if (operator === undefined)
             {
                 // Clear the state
