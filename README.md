@@ -17,3 +17,6 @@ There are a few ways to output the results of your operations.
 * The **append** operator writes the result to the end of the document
 * The **replace** operator writes the result over the first operand in the document
 * All operands and results are logged in the vcalc channel of the output panel.
+
+## Tips
+You can add a keyboard shortcut for editor.action.openLink which will click the link that the caret is on, and operators can be chosen by typing the first couple characters of their names.  This can be a lot faster than using the mouse!

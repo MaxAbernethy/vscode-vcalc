@@ -2,8 +2,9 @@
 	"name": "vectorcalculator",
 	"displayName": "VectorCalculator",
 	"description": "Do linear algebra calculations in-editor",
-	"version": "0.0.4",
-	"publisher": "MaxAbernethy2",
+	"version": "0.0.5",
+	"publisher": "Max Abernethy",
+	"icon": "CrossIcon.png",
 	"engines": {
 		"vscode": "^1.52.0"
 	},
