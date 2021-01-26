@@ -1,130 +1,11 @@
 'use strict';
 import { ExtensionContext, CancellationToken, DecorationOptions, Disposable, DocumentLink, DocumentLinkProvider,
     OutputChannel, Position, QuickPickItem, QuickPickOptions, Range, TextDocument, TextEditorDecorationType, TextEditorEdit, TextEditor, Uri, 
-    languages, commands, window, EndOfLine,  } from 'vscode';
+    languages, commands, window, EndOfLine } from 'vscode';
+import * as Parser from './parser';
+import { ValueMode, Value } from './value';
 
 let vscode = require('vscode');
-
-// Scalar, vector, or matrix. Matrices are stored in column-major order
-class Value extends Array<number>
-{
-    constructor(x: number[] = [0], rows: number = x.length)
-    {
-        super(x.length);
-        for (let i = 0; i < x.length; i++)
-        {
-            this[i] = x[i];
-        }
-        this.rows = rows;
-    }
-
-    static scalar(x: number) : Value
-    {
-        return new Value([x]);
-    }
-
-    static get invalid() : Value
-    {
-        return new Value([], 0);
-    }
-
-    get valid()
-    {
-        return this.rows > 0;
-    }
-
-    get dimensions(): number
-    {
-        if (this.length === 1)
-        {
-            return 0;
-        }
-        if (this.length === this.rows)
-        {
-            return 1;
-        }
-        if (this.length % this.rows === 0)
-        {
-            return 2;
-        }
-        return -1; // invalid
-    }
-
-    get cols(): number
-    {
-        return this.length / this.rows;
-    }
-
-    col(i: number): Value
-    {
-        return new Value(this.slice(i * this.rows, (i + 1) * this.rows));
-    }
-
-    index(row: number, col: number)
-    {
-        return col * this.rows + row;
-    }
-
-    entry(row: number, col: number): number
-    {
-        return this[this.index(row, col)];
-    }
-
-    rows: number;
-}
-
-enum ValueMode
-{
-    Decimal,
-    Hexadecimal
-}
-
-// Print a Value either as hex or dec
-function stringify(x:Value, mode: ValueMode): string
-{
-    function stringifyScalar(x:number, mode:ValueMode)
-    {
-        switch (mode)
-        {
-            case ValueMode.Decimal: return x.toString();
-            case ValueMode.Hexadecimal: return '0x' + ('00000000' + x.toString(16)).substr(-8);
-        }
-    }
-
-    function stringifyVector(x:number[], mode:ValueMode)
-    {
-        let vector = '(';
-        for (let i = 0; i < x.length; i++)
-        {
-            vector += stringifyScalar(x[i], mode);
-            if (i < x.length - 1)
-            {
-                vector += ', ';
-            }
-        }
-        return vector + ')';
-    }
-
-    switch(x.dimensions)
-    {
-        case 0: return stringifyScalar(x[0], mode);
-        case 1: return stringifyVector(x, mode);
-        case 2:
-        {
-            let matrix = '(';
-            for (let i = 0; i < x.cols; i++)
-            {
-                matrix += stringifyVector(x.col(i), mode);
-                if (i < x.cols - 1)
-                {
-                    matrix += ', ';
-                }
-            }
-            return matrix + ')';
-        }
-        default: return 'error';
-    }
-}
 
 // Apply a scalar binary operator to two values, pairwise if one or both has dimension > 1
 // Returns Value.invalid if neither a nor b is scalar and they don't have the same number of rows and cols
@@ -274,177 +155,6 @@ function transpose(x: Value) : Value
     return y;
 }
 
-enum ParseNodeType
-{
-    List,
-    Scalar,
-    Vector,
-    Matrix
-};
-
-// A node in the parse tree for a line of text.
-// It can represent either a scalar, a vector, a matrix, or a list of nodes.
-// It includes the range of characters in the line that comprise the node, a list
-// of child nodes, and if applicable the type of delimiter that would end the node.
-class ParseNode
-{
-    constructor(begin: number, delim: string)
-    {
-        this.begin = begin;
-        switch (delim)
-        {
-            case '{': this.delim = '}'; break;
-            case '[': this.delim = ']'; break;
-            case '(': this.delim = ')'; break;
-        }
-    }
-
-    close(end: number, parent: ParseNode)
-    {
-        // Remove this if it's empty
-        this.end = end;
-        if (this.items.length === 0)
-        {
-            return;
-        }
-
-        // Check for uniformity of children
-        let type = this.items[0].type;
-        let count = this.items[0].items.length;
-        for (let i = 1; i < this.items.length; i++)
-        {
-            if (this.items[i].type !== type)
-            {
-                type = ParseNodeType.List;
-            }
-            if (this.items[i].items.length !== count)
-            {
-                count = -1;
-            }
-        }
-
-        // Check if this is a list of scalars or a list of vectors with the same length
-        if (type === ParseNodeType.Scalar)
-        {
-            if (this.items.length === 1)
-            {
-                // Convert 1-vector to scalar
-                this.type = ParseNodeType.Scalar;
-                this.begin = this.items[0].begin;
-                this.end = this.items[0].end;
-                this.items = [];
-            }
-            else
-            {
-                // N-vector
-                this.type = ParseNodeType.Vector;
-            }
-        }
-        else if (type === ParseNodeType.Vector && count > 1)
-        {
-            if (this.items.length === 1)
-            {
-                // Convert Nx1 matrix to vector
-                this.type = ParseNodeType.Vector;
-                this.begin = this.items[0].begin;
-                this.end = this.items[0].end;
-                this.items = this.items[0].items;
-            }
-            else
-            {
-                // NxM matrix
-                this.type = ParseNodeType.Matrix;
-            }
-        } // else type remains none
-
-        if (parent !== null)
-        {
-            parent.items.push(this);
-        }
-    }
-
-    type: ParseNodeType = ParseNodeType.List;
-    begin: number = -1;
-    end: number = -1;
-    delim: string = '';
-    items: ParseNode[] = [];
-}
-
-// Parses a line of text to find numerical values and returns them in a tree.
-// For example if the line contains two 3-vectors, the tree will consist of a list node
-// with one child for each of the vectors, each of which has one child for each element.
-function parse(line: string): ParseNode
-{
-    let nodes:ParseNode[] = [new ParseNode(0, '')];
-    let i:number = 0;
-    let valid:boolean = true;
-    while (i < line.length)
-    {
-        let c = line[i];
-
-        if ('[({'.indexOf(c) >= 0)
-        {
-            // Opening delimiter - create a new node
-            nodes.push(new ParseNode(i, c));
-            valid = true;
-        }
-        else if (c === nodes[nodes.length - 1].delim)
-        {
-            // Closing delimiter - close a node
-            let node = nodes.pop();
-            if (node) // should always be defined, but TS complains
-            {
-                node.close(i + 1, nodes[nodes.length - 1]);
-            }
-            valid = true;
-        }
-        else if (valid)
-        {
-            // Alphabetic character - wait for a non-alphanumeric
-            if (c.search(/[a-zA-Z]/) >= 0)
-            {
-                valid = false;
-            }
-
-            // Numeric character or sign - try to consume a number
-            if (c.search(/[0-9-]/) >= 0)
-            {
-                // Search the line beginning from the current position
-                // Match: beginning of string, [2]hex or [3]dec with optional [4]exponent, [5]non-alphanumeric or end of string
-                let match = line.substr(i).match(/^((0x[0-9A-Fa-f]+)|(-?\d+\.?\d*(e[+-]?\d+)?f?))([^a-zA-Z0-9]|$)/);
-                if (match !== null)
-                {
-                    let next = i + match[0].length - match[5].length;
-                    let number = new ParseNode(i, '');
-                    number.end = next;
-                    number.type = ParseNodeType.Scalar;
-                    nodes[nodes.length - 1].items.push(number);
-                    i = next;
-                    continue;
-                }
-                else
-                {
-                    valid = false;
-                }
-            }
-        }
-        else if (c.search(/[^a-zA-Z0-9-]/) >= 0)
-        {
-            valid = true;
-        }
-
-        i++;
-    }
-
-    // Shed singleton lists
-    let node = nodes[nodes.length - 1];
-    while (node.type === ParseNodeType.List && node.items.length === 1)
-    {
-        node = node.items[0];
-    }
-    return node;
-}
-
 class ContentProvider implements DocumentLinkProvider
 {
     constructor()
@@ -499,12 +209,12 @@ class ContentProvider implements DocumentLinkProvider
 
             // Parse the line and generate links for its values
             let line = document.lineAt(i).text;
-            function linkify(node:ParseNode)
+            function linkify(node:Parser.Node)
             {
-                if (node.type === ParseNodeType.List)
+                if (node.type === Parser.NodeType.List)
                 {
                     // Recursively linkify children
-                    node.items.forEach((child: ParseNode) => { linkify(child); });
+                    node.items.forEach((child: Parser.Node) => { linkify(child); });
                 }
                 else
                 {
@@ -520,15 +230,15 @@ class ContentProvider implements DocumentLinkProvider
                     {
                         switch (node.type)
                         {
-                            case ParseNodeType.Scalar: scalarDecorations.push({ range: range, hoverMessage: 'scalar' }); break;
-                            case ParseNodeType.Vector: vectorDecorations.push({ range: range, hoverMessage: 'vector' + node.items.length }); break;
-                            case ParseNodeType.Matrix: matrixDecorations.push({ range: range, hoverMessage: 'matrix' + node.items[0].items.length + 'x' + node.items.length }); break;
+                            case Parser.NodeType.Scalar: scalarDecorations.push({ range: range, hoverMessage: 'scalar' }); break;
+                            case Parser.NodeType.Vector: vectorDecorations.push({ range: range, hoverMessage: 'vector' + node.items.length }); break;
+                            case Parser.NodeType.Matrix: matrixDecorations.push({ range: range, hoverMessage: 'matrix' + node.items[0].items.length + 'x' + node.items.length }); break;
                             default: break;
                         }
                     }
                 }
             }
-            linkify(parse(line));
+            linkify(Parser.parse(line));
         }
 
         // Apply decorations
@@ -660,9 +370,9 @@ class ContentProvider implements DocumentLinkProvider
         // Parse the operand
         let x: number[] = [];
         let allHex: boolean = (this.operand.length === 0 || this.mode === ValueMode.Hexadecimal);
-        function enumerate(node: ParseNode)
+        function enumerate(node: Parser.Node)
         {
-            if (node.type === ParseNodeType.Scalar)
+            if (node.type === Parser.NodeType.Scalar)
             {
                 let numberStr = operandStr.substr(node.begin, node.end - node.begin);
                 if (numberStr.substr(0, 2) === '0x')
@@ -677,18 +387,18 @@ class ContentProvider implements DocumentLinkProvider
             }
             else
             {
-                node.items.forEach((node: ParseNode) => enumerate(node));
+                node.items.forEach((node: Parser.Node) => enumerate(node));
             }
         }
-        let tree = parse(operandStr); 
+        let tree = Parser.parse(operandStr); 
         enumerate(tree);
         this.mode = (allHex ? ValueMode.Hexadecimal : ValueMode.Decimal);
         let rows: number;
         switch(tree.type)
         {
-            case ParseNodeType.Scalar: rows = 1; break;
-            case ParseNodeType.Vector: rows = x.length; break;
-            case ParseNodeType.Matrix: rows = x.length / tree.items.length; break;
+            case Parser.NodeType.Scalar: rows = 1; break;
+            case Parser.NodeType.Vector: rows = x.length; break;
+            case Parser.NodeType.Matrix: rows = x.length / tree.items.length; break;
             default:
                 this.report('error');
                 this.clear();
@@ -743,7 +453,7 @@ class ContentProvider implements DocumentLinkProvider
         while (true)
         {
             // Show the current value
-            let resultStr = stringify(result, this.mode);
+            let resultStr = result.stringify(this.mode);
             let message: string;
             if (this.operator.length === 0)
             {
@@ -751,11 +461,11 @@ class ContentProvider implements DocumentLinkProvider
             }
             else if (binaryOperator)
             {
-                message = stringify(this.operand, this.mode) + ' ' + this.operator + ' ' + stringify(operand, this.mode) + ' = ' + resultStr;
+                message = this.operand.stringify(this.mode) + ' ' + this.operator + ' ' + operand.stringify(this.mode) + ' = ' + resultStr;
             }
             else
             {
-                message = this.operator + ' ' + stringify(this.operand, this.mode) + ' = ' + resultStr;
+                message = this.operator + ' ' + this.operand.stringify(this.mode) + ' = ' + resultStr;
             }
             this.report(message);
             binaryOperator = false;
@@ -782,10 +492,10 @@ class ContentProvider implements DocumentLinkProvider
                 switch (this.mode)
                 {
                     case ValueMode.Decimal:
-                        operators.push({ label: 'hex32', description: stringify(result, ValueMode.Hexadecimal)});
+                        operators.push({ label: 'hex32', description: result.stringify(ValueMode.Hexadecimal)});
                         break;
                     case ValueMode.Hexadecimal:
-                        operators.push({ label: 'decimal', description: stringify(result, ValueMode.Decimal)});
+                        operators.push({ label: 'decimal', description: result.stringify(ValueMode.Decimal)});
                         break;
                 }
             }
@@ -802,8 +512,8 @@ class ContentProvider implements DocumentLinkProvider
                 {
                     operators.push({ label: 'xyz', description : result.slice(0, 3).toString()});
                 }
-                operators.push({ label: 'length', description: stringify(magnitude(result), this.mode) });
-                operators.push({ label: 'normalize', description: stringify(normalize(result), this.mode) });
+                operators.push({ label: 'length', description: magnitude(result).stringify(this.mode) });
+                operators.push({ label: 'normalize', description: normalize(result).stringify(this.mode) });
                 operators.push({ label: 'dot' });
                 if (result.length === 3)
                 {
@@ -815,9 +525,9 @@ class ContentProvider implements DocumentLinkProvider
                 // Matrix operations
                 for (let i = 0; i < result.cols; i++)
                 {
-                    operators.push({ label: 'col' + i, description: stringify(result.col(i), this.mode)});
+                    operators.push({ label: 'col' + i, description: result.col(i).stringify(this.mode)});
                 }
-                operators.push({ label: 'transpose', description: stringify(transpose(result), this.mode)});
+                operators.push({ label: 'transpose', description: transpose(result).stringify(this.mode)});
             }
 
             // Common binary operations
@@ -829,7 +539,7 @@ class ContentProvider implements DocumentLinkProvider
             // Common unary operations
             let unaryOp = (label: string, op: (x: Value) => Value) => 
             {
-                return { label: label, description: stringify(op(result), this.mode) };
+                return { label: label, description: op(result).stringify(this.mode) };
             };
             operators.push(unaryOp('square', square));
             operators.push(unaryOp('sqrt', sqrt));
@@ -895,7 +605,7 @@ class ContentProvider implements DocumentLinkProvider
 
                 // Output
                 case 'copy':
-                    vscode.env.clipboard.writeText(stringify(result, this.mode));
+                    vscode.env.clipboard.writeText(result.stringify(this.mode));
                     this.clear();
                     break;
 
@@ -972,7 +682,7 @@ class ContentProvider implements DocumentLinkProvider
             // Show the current value and operator
             if (this.operand.length > 0)
             {
-                this.report(stringify(this.operand, this.mode) + ' ' + this.operator + ' ...');
+                this.report(this.operand.stringify(this.mode) + ' ' + this.operator + ' ...');
             }
 
             return;
