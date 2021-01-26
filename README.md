@@ -17,7 +17,7 @@ When you click a link, its value is selected and a list of operators is shown.  
 There are a few ways to output the results of your operations.
 * The **copy** operator moves the result to the clipboard
 * The **append** operator writes the result to the end of the document
-* The **replace** operator writes the result over the first operand in the document
+* The **replace** operator writes the result over the link you clicked to begin the current chain of operations
 * All operands and results are logged in the vcalc channel of the output panel.
 
 ## Tips
