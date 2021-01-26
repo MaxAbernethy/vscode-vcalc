@@ -1,6 +1,6 @@
 'use strict';
 import { ExtensionContext, CancellationToken, DecorationOptions, Disposable, DocumentLink, DocumentLinkProvider,
-    OutputChannel, Position, QuickPickItem, QuickPickOptions, Range, TextDocument, TextEditorDecorationType, TextEditorEdit, Uri, 
+    OutputChannel, Position, QuickPickItem, QuickPickOptions, Range, TextDocument, TextEditorDecorationType, TextEditorEdit, TextEditor, Uri, 
     languages, commands, window, EndOfLine,  } from 'vscode';
 
 let vscode = require('vscode');
@@ -458,15 +458,45 @@ class ContentProvider implements DocumentLinkProvider
         this.channel = window.createOutputChannel('vcalc');
     }
 
-    // Parses every line of the document for numerical values and converts them to colored links
+    onDidChangeVisibleTextEditors(editors: TextEditor[]): void
+    {
+        // Apply text decorations to inactive regions
+        for (const e of editors)
+        {
+            this.parse(e.document, e, undefined);
+        }
+    }
+
     provideDocumentLinks(document: TextDocument, token: CancellationToken): DocumentLink[]
     {
-        let links: DocumentLink[] = [];
+        // Check if this document belongs to a visible text editor
+        let editor: TextEditor|undefined = undefined;
+        for (const e of window.visibleTextEditors)
+        {
+            if (e.document === document)
+            {
+                editor = e;
+                break;
+            }
+        }
+
+        return this.parse(document, editor, token);
+    }
+    
+    // Parses every line of the document for numerical values and converts them to colored links
+    parse(document: TextDocument, editor: TextEditor|undefined, token: CancellationToken|undefined): DocumentLink[]
+    {
         let scalarDecorations : DecorationOptions[] = [];
         let vectorDecorations : DecorationOptions[] = [];
         let matrixDecorations : DecorationOptions[] = [];
+        let links: DocumentLink[] = [];
         for (let i = 0; i < document.lineCount; i++)
         {
+            if (token && token.isCancellationRequested)
+            {
+                return [];
+            }
+
             // Parse the line and generate links for its values
             let line = document.lineAt(i).text;
             function linkify(node:ParseNode)
@@ -486,12 +516,15 @@ class ContentProvider implements DocumentLinkProvider
                     links.push(new DocumentLink(range, Uri.parse(commandUri)));
 
                     // Add decoration
-                    switch (node.type)
+                    if (editor)
                     {
-                        case ParseNodeType.Scalar: scalarDecorations.push({ range: range, hoverMessage: 'scalar' }); break;
-                        case ParseNodeType.Vector: vectorDecorations.push({ range: range, hoverMessage: 'vector' + node.items.length }); break;
-                        case ParseNodeType.Matrix: matrixDecorations.push({ range: range, hoverMessage: 'matrix' + node.items[0].items.length + 'x' + node.items.length }); break;
-                        default: break;
+                        switch (node.type)
+                        {
+                            case ParseNodeType.Scalar: scalarDecorations.push({ range: range, hoverMessage: 'scalar' }); break;
+                            case ParseNodeType.Vector: vectorDecorations.push({ range: range, hoverMessage: 'vector' + node.items.length }); break;
+                            case ParseNodeType.Matrix: matrixDecorations.push({ range: range, hoverMessage: 'matrix' + node.items[0].items.length + 'x' + node.items.length }); break;
+                            default: break;
+                        }
                     }
                 }
             }
@@ -499,11 +532,11 @@ class ContentProvider implements DocumentLinkProvider
         }
 
         // Apply decorations
-        if (window.activeTextEditor)
+        if (editor)
         {
-            window.activeTextEditor.setDecorations(this.scalarDecorationType, scalarDecorations);
-            window.activeTextEditor.setDecorations(this.vectorDecorationType, vectorDecorations);
-            window.activeTextEditor.setDecorations(this.matrixDecorationType, matrixDecorations);
+            editor.setDecorations(this.scalarDecorationType, scalarDecorations);
+            editor.setDecorations(this.vectorDecorationType, vectorDecorations);
+            editor.setDecorations(this.matrixDecorationType, matrixDecorations);
         }
         return links;
     }
@@ -981,22 +1014,20 @@ export function activate(context: ExtensionContext)
 {
     const provider = new ContentProvider();
 
-	// register content provider for scheme `references`
-	// register document link provider for scheme `references`
-	const providerRegistrations = Disposable.from(
+	// register document link provider for scheme
+	context.subscriptions.push(Disposable.from(
         languages.registerDocumentLinkProvider({ language:'plaintext' }, provider)
-	);
+	));
 
-    context.subscriptions.push(providerRegistrations);
-
-    let setOperandCommand = commands.registerCommand('vectorcalculator.setOperand', (begin: Position, end: Position) => {
+    // Register command callbacks
+    context.subscriptions.push(commands.registerCommand('vectorcalculator.setOperand', (begin: Position, end: Position) => {
         let range = new Range(new Position(begin.line, begin.character), new Position(end.line, end.character));
         provider.setOperand(range);
-    });
-    context.subscriptions.push(setOperandCommand);
+    }));
+    context.subscriptions.push(commands.registerCommand('vectorcalculator.inputOperand', () => provider.inputOperand()));
 
-    let inputOperandCommand = commands.registerCommand('vectorcalculator.inputOperand', () => provider.inputOperand());
-    context.subscriptions.push(inputOperandCommand);
+    // Register for notification when editor visibility changes
+    context.subscriptions.push(window.onDidChangeVisibleTextEditors((editors: TextEditor[]) => provider.onDidChangeVisibleTextEditors(editors)));
 }
 
 // this method is called when your extension is deactivated
