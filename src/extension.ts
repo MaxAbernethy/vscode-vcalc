@@ -79,31 +79,32 @@ enum ValueMode
     Hexadecimal
 }
 
-function stringifyScalar(x:number, mode:ValueMode)
-{
-    switch (mode)
-    {
-        case ValueMode.Decimal: return x.toString();
-        case ValueMode.Hexadecimal: return '0x' + ('00000000' + x.toString(16)).substr(-8);
-    }
-}
-
-function stringifyVector(x:number[], mode:ValueMode)
-{
-    let vector = '(';
-    for (let i = 0; i < x.length; i++)
-    {
-        vector += stringifyScalar(x[i], mode);
-        if (i < x.length - 1)
-        {
-            vector += ', ';
-        }
-    }
-    return vector + ')';
-}
-
+// Print a Value either as hex or dec
 function stringify(x:Value, mode: ValueMode): string
 {
+    function stringifyScalar(x:number, mode:ValueMode)
+    {
+        switch (mode)
+        {
+            case ValueMode.Decimal: return x.toString();
+            case ValueMode.Hexadecimal: return '0x' + ('00000000' + x.toString(16)).substr(-8);
+        }
+    }
+
+    function stringifyVector(x:number[], mode:ValueMode)
+    {
+        let vector = '(';
+        for (let i = 0; i < x.length; i++)
+        {
+            vector += stringifyScalar(x[i], mode);
+            if (i < x.length - 1)
+            {
+                vector += ', ';
+            }
+        }
+        return vector + ')';
+    }
+
     switch(x.dimensions)
     {
         case 0: return stringifyScalar(x[0], mode);
@@ -125,6 +126,9 @@ function stringify(x:Value, mode: ValueMode): string
     }
 }
 
+// Apply a scalar binary operator to two values, pairwise if one or both has dimension > 1
+// Returns Value.invalid if neither a nor b is scalar and they don't have the same number of rows and cols
+// (So, for example, if you try to add a vector to a matrix, it will not work).
 function opPairs(a:Value, b:Value, op:(a:number, b:number)=>number): Value
 {
     // Check type compatibility -- requires equal dimension matrices, equal length vectors, or at least one scalar
@@ -144,6 +148,8 @@ function opPairs(a:Value, b:Value, op:(a:number, b:number)=>number): Value
     return new Value(result, Math.max(a.rows, b.rows));
 }
 
+// Multiplies a vector or matrix by a vector or matrix.
+// Returns Value.invalid if left's cols do not match right's rows.
 function matrixMultiply(left:Value, right:Value): Value
 {
     if (left.cols !== right.rows)
@@ -167,6 +173,7 @@ function matrixMultiply(left:Value, right:Value): Value
     return new Value(result, left.rows);
 }
 
+// Returns the magnitude of a vector, or Value.invalid if x is not a vector
 function magnitude(x: Value): Value
 {
     if (x.dimensions !== 1)
@@ -182,6 +189,7 @@ function magnitude(x: Value): Value
     return Value.scalar(Math.sqrt(lengthSquared));
 }
 
+// Applies a unary operator to every element of a Value
 function unary(x:Value, op:(x:number) => number): Value
 {
     let y: number[] = [];
@@ -189,6 +197,7 @@ function unary(x:Value, op:(x:number) => number): Value
     return new Value(y, x.rows);
 }
 
+// Collection of simple unary operators
 let square = (x:Value) => unary(x, (x:number) => x * x);
 let sqrt = (x:Value) => unary(x, (x:number) => Math.sqrt(x));
 let reciprocal = (x:Value) => unary(x, (x:number) => 1.0 / x);
@@ -203,6 +212,7 @@ let atan = (x:Value) => unary(x, (x:number) => Math.atan(x));
 let rad2deg = (x:Value) => unary(x, (x:number) => x * 180.0 / Math.PI);
 let deg2rad = (x:Value) => unary(x, (x:number) => x * Math.PI / 180.0);
 
+// Normalizes a vector, or returns Value.invalid if x is not a vector
 function normalize(x:Value): Value
 {
     if (x.dimensions !== 1)
@@ -213,6 +223,8 @@ function normalize(x:Value): Value
     return unary(x, (x: number) => x * invLength);
 }
 
+// Returns the dot product of two vectors, or Value.invalid if the values
+// are not both vectors of equal length.
 function dot(a:Value, b:Value): Value
 {
     if (a.length !== b.length || a.dimensions !== 1 || b.dimensions !== 1)
@@ -229,6 +241,8 @@ function dot(a:Value, b:Value): Value
     return Value.scalar(sum);
 }
 
+// Returns the cross product of two vectors, or Value.invalid if the values
+// are not both 3-vectors
 function cross(a:Value, b:Value): Value
 {
     if (a.dimensions !==1 || b.dimensions !== 1 || a.length !== 3 || b.length !== 3)
@@ -243,6 +257,10 @@ function cross(a:Value, b:Value): Value
     ]);
 }
 
+// Returns a transposed value.
+// Notes: if x is a scalar this returns the same scalar.
+// If x is an N-vector this returns a 1xN matrix, as there is no concept
+// of row vector here.
 function transpose(x: Value) : Value
 {
     let y = new Value(x, x.cols);
@@ -264,6 +282,10 @@ enum ParseNodeType
     Matrix
 };
 
+// A node in the parse tree for a line of text.
+// It can represent either a scalar, a vector, a matrix, or a list of nodes.
+// It includes the range of characters in the line that comprise the node, a list
+// of child nodes, and if applicable the type of delimiter that would end the node.
 class ParseNode
 {
     constructor(begin: number, delim: string)
@@ -348,7 +370,10 @@ class ParseNode
     items: ParseNode[] = [];
 }
 
-function parse(line: string)
+// Parses a line of text to find numerical values and returns them in a tree.
+// For example if the line contains two 3-vectors, the tree will consist of a list node
+// with one child for each of the vectors, each of which has one child for each element.
+function parse(line: string): ParseNode
 {
     let nodes:ParseNode[] = [new ParseNode(0, '')];
     let i:number = 0;
@@ -424,19 +449,6 @@ class ContentProvider implements DocumentLinkProvider
 {
     constructor()
     {
-        // Initialize regular expressions
-        // numberExprStr = non-alphanumeric or beginning of string, ((hexadecimal number) or (decimal number))
-        //      (exponent) = e, maybe sign, digits
-        //   (hexadecimal number) = match[4] = 0x, hex digits
-        //   (decimal number) = match[5] = maybe sign, digits, point, maybe more digits, maybe (exponent), maybe f
-        let numberExprStr = "(([^a-zA-Z0-9]|^)((0x[0-9A-Fa-f]+)|(-?\\d+\\.?\\d*(e[+-]?\\d+)?f?)))";
-        this.numberExpr = new RegExp(numberExprStr, 'g');
-        let sepExprStr = "[()[\\]{}=\\s]";
-        this.leadingSeparatorExpr = new RegExp("^" + sepExprStr + "*");
-        this.trailingSeparatorExpr = new RegExp(sepExprStr + "*$");
-        let arrayExprStr = "(^|" + sepExprStr + "*)" + numberExprStr + "(" + sepExprStr + "*," + sepExprStr + "*" + numberExprStr + ")*";
-        this.arrayExpr = new RegExp(arrayExprStr, 'g');
-
         // Set up decorations
         this.scalarDecorationType = window.createTextEditorDecorationType({ color : "#9cdcfe" });
         this.vectorDecorationType = window.createTextEditorDecorationType({ color : "#dcdcaa" });
@@ -446,6 +458,7 @@ class ContentProvider implements DocumentLinkProvider
         this.channel = window.createOutputChannel('vcalc');
     }
 
+    // Parses every line of the document for numerical values and converts them to colored links
     provideDocumentLinks(document: TextDocument, token: CancellationToken): DocumentLink[]
     {
         let links: DocumentLink[] = [];
@@ -501,6 +514,9 @@ class ContentProvider implements DocumentLinkProvider
         this.channel.appendLine(message);
     }
 
+    // GUI to input an operand that is not in the text.
+    // Values can be in the same format as in the text, but there is also a list of constants
+    // to choose from that are not recognized in the text.
     async inputOperand()
     {
         // Clear unless awaiting a second operand
@@ -553,6 +569,11 @@ class ContentProvider implements DocumentLinkProvider
             }
             quickPick.hide();
         });
+
+        // QuickPick only lets you choose from its list of items, but while we want to provide
+        // a navigable list of suggestions, we also want to allow any value to be entered.  So,
+        // when the value that the user does not match anything in the list, it is just added
+        // as the first item in the list so that it can be selected.
         quickPick.onDidChangeValue(() =>
         {
             if (quickPick.value.length === 0 || quickPick.value[0].match(/[a-zA-Z]/))
@@ -570,6 +591,9 @@ class ContentProvider implements DocumentLinkProvider
         quickPick.show();
     }
 
+    // Chooses an operand from the text.
+    // This saves the range in the text that the value came from so that it can be overwritten
+    // by the replace operator later.
     async setOperand(range: Range)
     {
         // Fetch the string from the document
@@ -590,6 +614,14 @@ class ContentProvider implements DocumentLinkProvider
         this.setOperandStr(operandStr);
     }
     
+    // Inputs an operand.
+    // If there is a binary operator waiting for a second operand, that operation will be completed with the provided value
+    // and the result will be selected.  Otherwise, the provided value is selected.  Either way, the user is presented with
+    // a list of possible operators on the selected value.  If the user...
+    // - selects a unary operator: it is immediately applied.  If it is an output operator like copy or append then the state
+    //   is cleared; otherwise, the result of the operation is selected and a new list of operators is shown.
+    // - selects a binary operator: the operand and operator are saved until the user inputs another operand
+    // - does not select an operator: the state is reset
     async setOperandStr(operandStr: string)
     {
         // Parse the operand
@@ -917,6 +949,7 @@ class ContentProvider implements DocumentLinkProvider
         this.clear();
     }
 
+    // Reset the state, cancelling any pending operator
     clear()
     {
         this.operand = Value.invalid;
@@ -932,12 +965,6 @@ class ContentProvider implements DocumentLinkProvider
     // Location in the document of the first operand of the current chain of operations
     sourceRange: Range = new Range(new Position(0, 0), new Position(0, 0));
     sourceString: String = '';
-
-    // Regular expressions
-    numberExpr: RegExp;
-    arrayExpr: RegExp;
-    leadingSeparatorExpr: RegExp;
-    trailingSeparatorExpr: RegExp;
 
     // Styling
     scalarDecorationType: TextEditorDecorationType;
