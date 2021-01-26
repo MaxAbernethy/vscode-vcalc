@@ -193,6 +193,7 @@ let square = (x:Value) => unary(x, (x:number) => x * x);
 let sqrt = (x:Value) => unary(x, (x:number) => Math.sqrt(x));
 let reciprocal = (x:Value) => unary(x, (x:number) => 1.0 / x);
 let negate = (x:Value) => unary(x, (x:number) => -x);
+let abs = (x:Value) => unary(x, (x:number) => Math.abs(-x));
 let sin = (x:Value) => unary(x, (x:number) => Math.sin(x));
 let cos = (x:Value) => unary(x, (x:number) => Math.cos(x));
 let tan = (x:Value) => unary(x, (x:number) => Math.tan(x));
@@ -511,6 +512,7 @@ class ContentProvider implements DocumentLinkProvider
         // Make a list of preset constants
         let consts = new Map<string, string>();
         consts.set('e', Math.E.toString());
+        consts.set('epsilon', (1.0 / 8388608).toString()); // 32-bit floating point epsilon, 2^-23
         consts.set('pi', Math.PI.toString());
         consts.set('sqrt2', Math.sqrt(2).toString());
         consts.set('sqrt3', Math.sqrt(3).toString());
@@ -768,6 +770,7 @@ class ContentProvider implements DocumentLinkProvider
             operators.push(unaryOp('sqrt', sqrt));
             operators.push(unaryOp('reciprocal', reciprocal));
             operators.push(unaryOp('negate', negate));
+            operators.push(unaryOp('abs', abs));
             operators.push(unaryOp('sin', sin));
             operators.push(unaryOp('cos', cos));
             operators.push(unaryOp('tan', tan));
@@ -815,6 +818,7 @@ class ContentProvider implements DocumentLinkProvider
                 case 'sqrt': result = sqrt(result); continue;
                 case 'reciprocal': result = reciprocal(result); continue;
                 case 'negate': result = negate(result); continue;
+                case 'abs': result = abs(result); continue;
                 case 'sin': result = sin(result); continue;
                 case 'cos': result = cos(result); continue;
                 case 'tan': result = tan(result); continue;
