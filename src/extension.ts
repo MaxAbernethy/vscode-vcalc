@@ -122,11 +122,13 @@ function dot(a:Value, b:Value): Value
     return Value.scalar(sum);
 }
 
+
 // Returns the cross product of two vectors, or Value.invalid if the values
-// are not both 3-vectors
+// are not both vectors of length at least 3.  If an operand is of length greater than 3,
+// the vector of its first 3 components is used in its place.
 function cross(a:Value, b:Value): Value
 {
-    if (a.dimensions !==1 || b.dimensions !== 1 || a.length !== 3 || b.length !== 3)
+    if (a.dimensions !==1 || b.dimensions !== 1 || a.length < 3 || b.length < 3)
     {
         return Value.invalid;
     }
@@ -515,7 +517,7 @@ class ContentProvider implements DocumentLinkProvider
                 operators.push({ label: 'length', description: magnitude(result).stringify(this.mode) });
                 operators.push({ label: 'normalize', description: normalize(result).stringify(this.mode) });
                 operators.push({ label: 'dot' });
-                if (result.length === 3)
+                if (result.length >= 3)
                 {
                     operators.push({ label: 'cross' });
                 }
