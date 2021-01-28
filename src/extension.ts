@@ -90,6 +90,9 @@ let tan = (x:Value) => unary(x, (x:number) => Math.tan(x));
 let asin = (x:Value) => unary(x, (x:number) => Math.asin(x));
 let acos = (x:Value) => unary(x, (x:number) => Math.acos(x));
 let atan = (x:Value) => unary(x, (x:number) => Math.atan(x));
+let log = (x:Value) => unary(x, (x:number) => Math.log(x));
+let exp = (x:Value) => unary(x, (x:number) => Math.exp(x));
+let exp2 = (x:Value) => unary(x, (x:number) => Math.pow(2, x));
 let rad2deg = (x:Value) => unary(x, (x:number) => x * 180.0 / Math.PI);
 let deg2rad = (x:Value) => unary(x, (x:number) => x * Math.PI / 180.0);
 
@@ -122,7 +125,6 @@ function dot(a:Value, b:Value): Value
     return Value.scalar(sum);
 }
 
-
 // Returns the cross product of two vectors, or Value.invalid if the values
 // are not both vectors of length at least 3.  If an operand is of length greater than 3,
 // the vector of its first 3 components is used in its place.
@@ -139,7 +141,6 @@ function cross(a:Value, b:Value): Value
         a[0] * b[1] - a[1] * b[0]
     ]);
 }
-
 
 // Returns the angle between two vectors, or Value.invalid if the values are not
 // both nonzero vectors of the same length 2 or 3.
@@ -306,6 +307,10 @@ class ContentProvider implements DocumentLinkProvider
 
         // Make a list of preset constants
         let consts = new Map<string, string>();
+        if (this.stack.length)
+        {
+            consts.set('pop', this.stack[this.stack.length - 1].stringify(this.mode));
+        }
         consts.set('e', Math.E.toString());
         consts.set('epsilon', (1.0 / 8388608).toString()); // 32-bit floating point epsilon, 2^-23
         consts.set('pi', Math.PI.toString());
@@ -341,6 +346,10 @@ class ContentProvider implements DocumentLinkProvider
                 if (operandStr === undefined || operandStr.length === 0)
                 {
                     operandStr = operand.label;
+                }
+                else if (operand.label === 'pop')
+                {
+                    this.stack.pop();
                 }
 
                 // Set the operand
@@ -468,6 +477,7 @@ class ContentProvider implements DocumentLinkProvider
                 }
                 break;
             }
+            case 'power': result = opPairs(this.operand, operand, function(a:number, b:number):number { return Math.pow(a, b); }); break;
 
             // Linear algebra
             case 'dot': result = dot(this.operand, operand); break;
@@ -512,6 +522,7 @@ class ContentProvider implements DocumentLinkProvider
 
             // Output operations
             operators.push({ label: 'copy', description: resultStr });
+            operators.push({ label: 'push', description: resultStr });
             operators.push({ label: 'append', description: resultStr });
             operators.push({ label: 'replace', description: resultStr });
 
@@ -576,6 +587,7 @@ class ContentProvider implements DocumentLinkProvider
             operators.push({ label: 'subtract' });
             operators.push({ label: 'multiply' });
             operators.push({ label: 'divide' });
+            operators.push({ label: 'power' });
 
             // Common unary operations
             let unaryOp = (label: string, op: (x: Value) => Value) => 
@@ -593,6 +605,9 @@ class ContentProvider implements DocumentLinkProvider
             operators.push(unaryOp('asin', asin));
             operators.push(unaryOp('acos', acos));
             operators.push(unaryOp('atan', atan));
+            operators.push(unaryOp('log', log));
+            operators.push(unaryOp('e^x', exp));
+            operators.push(unaryOp('2^x', exp2));
             operators.push(unaryOp('rad2deg', rad2deg));
             operators.push(unaryOp('deg2rad', deg2rad));
 
@@ -641,12 +656,21 @@ class ContentProvider implements DocumentLinkProvider
                 case 'asin': result = asin(result); continue;
                 case 'acos': result = acos(result); continue;
                 case 'atan': result = atan(result); continue;
+                case 'log': result = log(result); continue;
+                case 'e^x': result = exp(result); continue;
+                case '2^x': result = exp2(result); continue;
                 case 'rad2deg': result = rad2deg(result); continue;
                 case 'deg2rad': result = deg2rad(result); continue;
 
                 // Output
                 case 'copy':
                     vscode.env.clipboard.writeText(result.stringify(this.mode));
+                    this.clear();
+                    break;
+                    
+                // Output
+                case 'push':
+                    this.stack.push(result);
                     this.clear();
                     break;
 
@@ -739,12 +763,16 @@ class ContentProvider implements DocumentLinkProvider
         this.operand = Value.invalid;
         this.operator = '';
         this.sourceString = '';
+        this.mode = ValueMode.Decimal;
     }
 
     // Currently selected operand / operator
     operand: Value = Value.invalid;
     operator: string = '';
     mode: ValueMode = ValueMode.Decimal;
+
+    // Stack of values that can be accessed through pop in the input value interface
+    stack: Value[] = [];
 
     // Location in the document of the first operand of the current chain of operations
     sourceRange: Range = new Range(new Position(0, 0), new Position(0, 0));

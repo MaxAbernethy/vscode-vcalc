@@ -16,9 +16,15 @@ When you click a link, its value is selected and a list of operators is shown.  
 ## Outputs
 There are a few ways to output the results of your operations.
 * The **copy** operator moves the result to the clipboard
+* The **push** operator moves the result to a stack that you can access with the vectorcalc.inputOperand command.
 * The **append** operator writes the result to the end of the document
 * The **replace** operator writes the result over the link you clicked to begin the current chain of operations
 * All operands and results are logged in the vcalc channel of the output panel.
 
 ## Tips
 You can add a keyboard shortcut for editor.action.openLink which will click the link that the caret is on, and operators can be chosen by typing the first couple characters of their names.  This can be a lot faster than using the mouse!
+
+## Other details
+* All angles are in radians
+* Scalar operators are applied per component to vectors and matrices.  For example 10 + (1, 2, 3) = (11, 12, 13), acos((1, 0), (0, 1)) = ((pi, 0), (0, pi)
+* You can take the cross product of any pair of vectors with more than three components each, and only the first three components are used
