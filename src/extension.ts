@@ -140,6 +140,40 @@ function cross(a:Value, b:Value): Value
     ]);
 }
 
+
+// Returns the angle between two vectors, or Value.invalid if the values are not
+// both nonzero vectors of the same length 2 or 3.
+function angle(a:Value, b:Value): Value
+{
+    if (a.dimensions !== 1 || b.dimensions !== 1 ||
+        a.length !== b.length || a.length < 2 || a.length > 3 || 
+        magnitude(a)[0] === 0 || magnitude(b)[0] === 0)
+    {
+        return Value.invalid;
+    }
+
+    let normA = normalize(a);
+    let normB = normalize(b);
+
+    let cosAngle = dot(normA, normB);
+    if (cosAngle[0] > Math.sqrt(2) / 2)
+    {
+        // Sine is closer to zero and therefore more accurate
+        let sinAngle: Value;
+        if (a.length === 2)
+        {
+            sinAngle = Value.scalar(normA[0] * normB[1] - normA[1] * normB[0]);
+        }
+        else
+        {
+            sinAngle = magnitude(cross(normA, normB));
+        }
+        return abs(asin(sinAngle));
+    }
+    return acos(cosAngle);
+}
+
+
 // Returns a transposed value.
 // Notes: if x is a scalar this returns the same scalar.
 // If x is an N-vector this returns a 1xN matrix, as there is no concept
@@ -438,6 +472,7 @@ class ContentProvider implements DocumentLinkProvider
             // Linear algebra
             case 'dot': result = dot(this.operand, operand); break;
             case 'cross': result = cross(this.operand, operand); break;
+            case 'angle': result = angle(this.operand, operand); break;
 
             default: result = operand;
         }
@@ -521,6 +556,10 @@ class ContentProvider implements DocumentLinkProvider
                 {
                     operators.push({ label: 'cross' });
                 }
+                if (result.length >= 2 && result.length <= 3 && magnitude(result)[0] !== 0)
+                {
+                    operators.push({ label: 'angle', description: '(to another vector)' });
+                }
             }
             else if (result.dimensions === 2)
             {
@@ -554,16 +593,16 @@ class ContentProvider implements DocumentLinkProvider
             operators.push(unaryOp('asin', asin));
             operators.push(unaryOp('acos', acos));
             operators.push(unaryOp('atan', atan));
-            operators.push(unaryOp('rad->deg', rad2deg));
-            operators.push(unaryOp('deg->rad', deg2rad));
+            operators.push(unaryOp('rad2deg', rad2deg));
+            operators.push(unaryOp('deg2rad', deg2rad));
 
             // Choose an operator
             let operandDesc = '';
-            switch (operand.dimensions)
+            switch (result.dimensions)
             {
                 case 0: operandDesc = 'Scalar'; break;
-                case 1: operandDesc = 'Vector' + operand.rows; break;
-                case 2: operandDesc = 'Matrix' + operand.rows + 'x' + operand.cols; break;
+                case 1: operandDesc = 'Vector' + result.rows; break;
+                case 2: operandDesc = 'Matrix' + result.rows + 'x' + result.cols; break;
             }
             let operator = await window.showQuickPick(operators, {placeHolder: operandDesc + ' operator'});
             if (operator === undefined)
@@ -602,8 +641,8 @@ class ContentProvider implements DocumentLinkProvider
                 case 'asin': result = asin(result); continue;
                 case 'acos': result = acos(result); continue;
                 case 'atan': result = atan(result); continue;
-                case 'rad->deg': result = rad2deg(result); continue;
-                case 'deg->rad': result = deg2rad(result); continue;
+                case 'rad2deg': result = rad2deg(result); continue;
+                case 'deg2rad': result = deg2rad(result); continue;
 
                 // Output
                 case 'copy':
