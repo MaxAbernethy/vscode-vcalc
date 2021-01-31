@@ -29,6 +29,12 @@ function opPairs(a:Value, b:Value, op:(a:number, b:number)=>number): Value
     return new Value(result, Math.max(a.rows, b.rows));
 }
 
+let addPairs = (a: Value, b: Value) => opPairs(a, b, (x: number, y: number) => x + y);
+let subPairs = (a: Value, b: Value) => opPairs(a, b, (x: number, y: number) => x - y);
+let mulPairs = (a: Value, b: Value) => opPairs(a, b, (x: number, y: number) => x * y);
+let divPairs = (a: Value, b: Value) => opPairs(a, b, (x: number, y: number) => x / y);
+let powPairs = (a: Value, b: Value) => opPairs(a, b, (x: number, y: number) => Math.pow(x, y));
+
 // Multiplies a vector or matrix by a vector or matrix.
 // Returns Value.invalid if left's cols do not match right's rows.
 function matrixMultiply(left:Value, right:Value): Value
@@ -95,6 +101,7 @@ let exp = (x:Value) => unary(x, (x:number) => Math.exp(x));
 let exp2 = (x:Value) => unary(x, (x:number) => Math.pow(2, x));
 let rad2deg = (x:Value) => unary(x, (x:number) => x * 180.0 / Math.PI);
 let deg2rad = (x:Value) => unary(x, (x:number) => x * Math.PI / 180.0);
+let zero = (x:Value) => unary(x, (x:number) => 0);
 
 // Normalizes a vector, or returns Value.invalid if x is not a vector
 function normalize(x:Value): Value
@@ -123,6 +130,30 @@ function dot(a:Value, b:Value): Value
         sum += a[i] * b[i];
     }
     return Value.scalar(sum);
+}
+
+// Returns the projection of a onto b, or Value.invalid if they are not
+// both vectors of equal length
+function project(a:Value, b:Value): Value
+{
+    let d = dot(a, b);
+    if (!d.valid)
+    {
+        return d;
+    }
+    if (d[0] === 0)
+    {
+        return zero(a);
+    }
+    return mulPairs(b, divPairs(d, dot(b, b)));
+}
+
+// Returns the rejection of a from b, or Value.invalid if they are not
+// both vectors of equal length
+function reject(a:Value, b:Value): Value
+{
+    let p = project(a, b);
+    return subPairs(a, p);
 }
 
 // Returns the cross product of two vectors, or Value.invalid if the values
@@ -462,9 +493,9 @@ class ContentProvider implements DocumentLinkProvider
         switch(this.operator)
         {
             // Arithmetic -- except for matrix-matrix and matrix-vector multiply, all are done component-wise
-            case 'add': result = opPairs(this.operand, operand, function(a:number, b:number):number { return a + b; }); break;
-            case 'subtract': result = opPairs(this.operand, operand, function(a:number, b:number):number { return a - b; }); break;
-            case 'divide': result = opPairs(this.operand, operand, function(a:number, b:number):number { return a / b; }); break;
+            case 'add': result = addPairs(this.operand, operand); break;
+            case 'subtract': result = subPairs(this.operand, operand); break;
+            case 'divide': result = divPairs(this.operand, operand); break;
             case 'multiply':
             {
                 if (this.operand.dimensions === 2 && operand.dimensions !== 0)
@@ -479,16 +510,18 @@ class ContentProvider implements DocumentLinkProvider
                 }
                 else
                 {
-                    result = opPairs(this.operand, operand, function(a:number, b:number):number { return a * b; });
+                    result = mulPairs(this.operand, operand);
                 }
                 break;
             }
-            case 'power': result = opPairs(this.operand, operand, function(a:number, b:number):number { return Math.pow(a, b); }); break;
+            case 'power': result = powPairs(this.operand, operand); break;
 
             // Linear algebra
             case 'dot': result = dot(this.operand, operand); break;
             case 'cross': result = cross(this.operand, operand); break;
             case 'angle': result = angle(this.operand, operand); break;
+            case 'project': result = project(this.operand, operand); break;
+            case 'reject': result = reject(this.operand, operand); break;
 
             default: result = operand;
         }
@@ -569,6 +602,8 @@ class ContentProvider implements DocumentLinkProvider
                 operators.push({ label: 'length', description: magnitude(result).stringify(this.mode) });
                 operators.push({ label: 'normalize', description: normalize(result).stringify(this.mode) });
                 operators.push({ label: 'dot' });
+                operators.push({ label: 'project' });
+                operators.push({ label: 'reject' });
                 if (result.length >= 3)
                 {
                     operators.push({ label: 'cross' });
