@@ -233,6 +233,12 @@ class ContentProvider implements DocumentLinkProvider
     // Parses every line of the document for numerical values and converts them to colored links
     parse(document: TextDocument, editor: TextEditor|undefined, token: CancellationToken|undefined): DocumentLink[]
     {
+        // Apply to plaintext only
+        if (document.languageId !== 'plaintext')
+        {
+            return [];
+        }
+
         let scalarDecorations : DecorationOptions[] = [];
         let vectorDecorations : DecorationOptions[] = [];
         let matrixDecorations : DecorationOptions[] = [];
