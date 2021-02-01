@@ -205,6 +205,42 @@ function angle(a:Value, b:Value): Value
     return acos(cosAngle);
 }
 
+// Returns a vector of the first three components of v, or invalid if v is not a vector
+// with at least three components
+function xyz(v: Value): Value
+{
+    if (a.dimensions !== 1 || a.rows < 3)
+    {
+        return Value.invalid;
+    }
+    return new Value(v.slice(0, 3));
+}
+
+// Returns the plane with normal normalize(xyz(direction)) containing point xyz(position),
+// or invalid if any of those operations are not possible.
+function plane(direction: Value, position: Value): Value
+{
+    let n = normalize(xyz(direction));
+    let v = xyz(position);
+    if (!n.valid || !v.valid)
+    {
+        return Value.invalid;
+    }
+
+    return new Value([...n, negate(dot(n, v))]);
+}
+
+// Returns the signed distance from point xyz(a) to plane b
+function pointPlaneDistance(point: Value, plane: Value): Value
+{
+    let v = xyz(point);
+    if (!v.valid || plane.dimensions !== 1 || plane.length < 4)
+    {
+        return Value.invalid;
+    }
+
+    return dot(new Value([...v, 1.0]), plane);
+}
 
 // Returns a transposed value.
 // Notes: if x is a scalar this returns the same scalar.
@@ -522,6 +558,17 @@ class ContentProvider implements DocumentLinkProvider
             case 'angle': result = angle(this.operand, operand); break;
             case 'project': result = project(this.operand, operand); break;
             case 'reject': result = reject(this.operand, operand); break;
+            case 'plane': result = plane(this.operand, operand); break;
+            case 'planeDistance': 
+                if (operand.length >= 4 && this.operand.length < 4)
+                {
+                    result = pointPlaneDistance(this.operand, operand);
+                }
+                else
+                {
+                    result = pointPlaneDistance(this.operand, operand);
+                }
+                break;
 
             default: result = operand;
         }
