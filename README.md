@@ -27,7 +27,7 @@ You can add a keyboard shortcut for editor.action.openLink which will click the 
 ## Other details
 * All angles are in radians
 * Scalar operators are applied per component to vectors and matrices.  For example 10 + (1, 2, 3) = (11, 12, 13), acos((1, 0), (0, 1)) = ((pi, 0), (0, pi)
-* There are some operators that treat a vector4 (a, b, c, d) as the plane ax + by + cz + d = 0:
+* There are some operators that regard a vector4 (a, b, c, d) as the plane ax + by + cz + d = 0:
     * The **plane** operator takes a vector3 direction and a vector3 position, and returns the plane through that point with normal in that direction.
     * The **planeDistance** operator takes a vector3 position and a vector4 plane, and returns the point's signed distance to the plane.
-* Vector operators try to "just work" when the vectors are the wrong length.  For instance, if you use **cross**, **plane**, or **angle** with a vector4, it will just use the first three components rather than failing.
+* Vector operators try to "just work" when the vectors are the wrong length.  For instance, if you use **cross** or **plane** with a vector4, it will just use the first three components rather than failing.
