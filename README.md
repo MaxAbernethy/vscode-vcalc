@@ -16,7 +16,7 @@ When you click a link, its value is selected and a list of operators is shown.  
 ## Outputs
 There are a few ways to output the results of your operations.
 * The **copy** operator moves the result to the clipboard
-* The **push** operator moves the result to a stack that you can access with the vectorcalc.inputOperand command.
+* The **push** operator moves the result to a stack that you can access with **pop** in the vectorcalc.inputOperand command.
 * The **append** operator writes the result to the end of the document
 * The **replace** operator writes the result over the link you clicked to begin the current chain of operations
 * All operands and results are logged in the vcalc channel of the output panel.
@@ -30,4 +30,4 @@ You can add a keyboard shortcut for editor.action.openLink which will click the 
 * There are some operators that treat a vector4 (a, b, c, d) as the plane ax + by + cz + d = 0:
     * The **plane** operator takes a vector3 direction and a vector3 position, and returns the plane through that point with normal in that direction.
     * The **planeDistance** operator takes a vector3 position and a vector4 plane, and returns the point's signed distance to the plane.
-* Vector operators try to "just work" when the vectors are the wrong length.  For instance, if you use **cross** or **plane** with a vector4, it will just use the first three components rather than failing.
+* Vector operators try to "just work" when the vectors are the wrong length.  For instance, if you use **cross**, **plane**, or **angle** with a vector4, it will just use the first three components rather than failing.

@@ -209,7 +209,7 @@ function angle(a:Value, b:Value): Value
 // with at least three components
 function xyz(v: Value): Value
 {
-    if (a.dimensions !== 1 || a.rows < 3)
+    if (v.dimensions !== 1 || v.rows < 3)
     {
         return Value.invalid;
     }
@@ -222,12 +222,12 @@ function plane(direction: Value, position: Value): Value
 {
     let n = normalize(xyz(direction));
     let v = xyz(position);
-    if (!n.valid || !v.valid)
+    if (!n.valid || n.rows < 3 || !v.valid)
     {
         return Value.invalid;
     }
 
-    return new Value([...n, negate(dot(n, v))]);
+    return new Value([n[0], n[1], n[2], negate(dot(n, v))[0]]);
 }
 
 // Returns the signed distance from point xyz(a) to plane b
@@ -566,7 +566,7 @@ class ContentProvider implements DocumentLinkProvider
                 }
                 else
                 {
-                    result = pointPlaneDistance(this.operand, operand);
+                    result = pointPlaneDistance(operand, this.operand);
                 }
                 break;
 
@@ -644,7 +644,7 @@ class ContentProvider implements DocumentLinkProvider
                 }
                 if (result.length > 3)
                 {
-                    operators.push({ label: 'xyz', description : result.slice(0, 3).toString()});
+                    operators.push({ label: 'xyz', description : xyz(result).stringify(this.mode)});
                 }
                 operators.push({ label: 'length', description: magnitude(result).stringify(this.mode) });
                 operators.push({ label: 'normalize', description: normalize(result).stringify(this.mode) });
@@ -654,6 +654,8 @@ class ContentProvider implements DocumentLinkProvider
                 if (result.length >= 3)
                 {
                     operators.push({ label: 'cross' });
+                    operators.push({ label: 'plane' });
+                    operators.push({ label: 'planeDistance' });
                 }
                 if (result.length >= 2 && result.length <= 3 && magnitude(result)[0] !== 0)
                 {
@@ -727,7 +729,7 @@ class ContentProvider implements DocumentLinkProvider
                 case 'y': result = Value.scalar(result[1]); continue;
                 case 'z': result = Value.scalar(result[2]); continue;
                 case 'w': result = Value.scalar(result[3]); continue;
-                case 'xyz': result = new Value(result.slice(0, 3)); continue;
+                case 'xyz': result = xyz(result); continue;
                 
                 case 'length': result = magnitude(result); continue;
                 case 'normalize': result = normalize(result); continue;

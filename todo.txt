@@ -1,9 +1,6 @@
 - formatting options
     - number of significant digits
     - f endings
-- more operators
-    - point-plane distance (vec4 and vec3)
-    - plane-through-point (vec3 direction and vec3 point, normalize the direction and dot it with point)
 - consider adding some extra decoration on invalid stuff that is within the bounds of a vector/matrix, like background color.  eg. if I write (1f, 2f, 3ff), highlight the 3ff to make it clear that it will be excluded and I will get a 2-vector, not a 3-vector.
 - 4x3 'transform' matrix operations -- first 3 cols rotation, last col translation
 
