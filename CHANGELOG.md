@@ -1,9 +1,6 @@
 # Change Log
 
-All notable changes to the "vectorcalculator" extension will be documented in this file.
+## 0.0.9
 
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
-
-## [Unreleased]
-
-- Initial release
+* Parser now automatically closes open delimiters
+* Parser now accepts capital E and F, eg. 123E-4F = 123e-4f = 0.0123

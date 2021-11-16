@@ -116,10 +116,7 @@ export function parse(line: string): Node
         {
             // Closing delimiter - close a node
             let node = nodes.pop();
-            if (node) // should always be defined, but TS complains
-            {
-                node.close(i + 1, nodes[nodes.length - 1]);
-            }
+            node!.close(i + 1, nodes[nodes.length - 1]);
             valid = true;
         }
         else if (valid)
@@ -133,9 +130,11 @@ export function parse(line: string): Node
             // Numeric character or sign - try to consume a number
             if (c.search(/[0-9-]/) >= 0)
             {
+                valid = false; // A separator character will be required after this before the next number can begin
+
                 // Search the line beginning from the current position
                 // Match: beginning of string, [2]hex or [3]dec with optional [4]exponent, [5]non-alphanumeric or end of string
-                let match = line.substr(i).match(/^((0x[0-9A-Fa-f]+)|(-?\d+\.?\d*(e[+-]?\d+)?f?))([^a-zA-Z0-9]|$)/);
+                let match = line.substr(i).match(/^((0x[0-9A-Fa-f]+)|(-?\d+\.?\d*([eE][+-]?\d+)?[fF]?))([^a-zA-Z0-9]|$)/);
                 if (match !== null)
                 {
                     let next = i + match[0].length - match[5].length;
@@ -145,10 +144,6 @@ export function parse(line: string): Node
                     nodes[nodes.length - 1].items.push(number);
                     i = next;
                     continue;
-                }
-                else
-                {
-                    valid = false;
                 }
             }
         }
@@ -160,8 +155,19 @@ export function parse(line: string): Node
         i++;
     }
 
+    // Close any open nodes
+    while (nodes.length > 1)
+    {
+        let child = nodes.pop()!;
+        if (child.items.length > 0)
+        {
+            let parent = nodes[nodes.length - 1];
+            child.close(child.items[child.items.length - 1].end, parent);
+        } // else discard the empty node
+    }
+
     // Shed singleton lists
-    let node = nodes[nodes.length - 1];
+    let node = nodes[0];
     while (node.type === NodeType.List && node.items.length === 1)
     {
         node = node.items[0];

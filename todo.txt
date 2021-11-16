@@ -9,3 +9,5 @@ to publish updates:
 - go to https://marketplace.visualstudio.com/manage/publishers/maxabernethy2
 - click the ... and choose "update"
 - drag in the .vsix file from vsce
+
+to install a vsix locally for testing, code --install-extension whatever.vsix
