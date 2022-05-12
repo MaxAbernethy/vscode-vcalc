@@ -69,6 +69,18 @@ export class Value extends Array<number>
         return this[this.index(row, col)];
     }
 
+    isIntegral(): boolean
+    {
+        for (let i = 0; i < this.length; i++)
+        {
+            if (!Number.isInteger(this[i]) || this[i] < 0 || this[i] > 0xffffffff)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+    
     // Print a Value either as hex or dec
     stringify(mode: ValueMode): string
     {
@@ -93,6 +105,12 @@ export class Value extends Array<number>
                 }
             }
             return vector + ')';
+        }
+
+        // Display as decimal if this cannot be hex32
+        if (mode === ValueMode.Hexadecimal && !this.isIntegral())
+        {
+            mode = ValueMode.Decimal;
         }
 
         switch(this.dimensions)

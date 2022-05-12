@@ -242,6 +242,35 @@ function pointPlaneDistance(point: Value, plane: Value): Value
     return dot(new Value([...v, 1.0]), plane);
 }
 
+// Converts quaternion ix + jy + kz + w to a 3x3 rotation matrix
+function quaternionToMatrix(quaternion: Value): Value
+{
+    if (quaternion.dimensions !==1 || quaternion.length !== 4)
+    {
+        return Value.invalid;
+    }
+
+    let q = normalize(quaternion);
+
+    let q2 = addPairs(q, q);
+    let xq2 = mulPairs(q2, Value.scalar(q[0]));
+    let yq2 = mulPairs(q2, Value.scalar(q[1]));
+    let zq2 = mulPairs(q2, Value.scalar(q[2]));
+    let wq2 = mulPairs(q2, Value.scalar(q[3]));
+
+    let tmp1 = yq2[2] - wq2[0];
+    let tmp2 = xq2[2] + wq2[1];
+    let tmp3 = 1 - zq2[2];
+
+    return new Value(
+        [
+            tmp3 - yq2[1], xq2[1] + wq2[2], xq2[2] - wq2[1],
+            xq2[1] - wq2[2], tmp3 - xq2[0], yq2[2] + wq2[0],
+            tmp2, tmp1, (1 - xq2[0]) - yq2[1]
+        ], 3
+    );
+}
+
 // Returns a transposed value.
 // Notes: if x is a scalar this returns the same scalar.
 // If x is an N-vector this returns a 1xN matrix, as there is no concept
@@ -613,15 +642,7 @@ class ContentProvider implements DocumentLinkProvider
             operators.push({ label: 'replace', description: resultStr });
 
             // Mode operations
-            let isIntegral: boolean = true;
-            for (let i = 0; i < result.length; i++)
-            {
-                if (!Number.isInteger(result[i]) || result[i] < 0 || result[i] > 0xffffffff)
-                {
-                    isIntegral = false;
-                }
-            }
-            if (isIntegral)
+            if (result.isIntegral())
             {
                 switch (this.mode)
                 {
@@ -632,6 +653,11 @@ class ContentProvider implements DocumentLinkProvider
                         operators.push({ label: 'decimal', description: result.stringify(ValueMode.Decimal)});
                         break;
                 }
+            }
+            else
+            {
+                // Result cannot be hex32
+                this.mode = ValueMode.Decimal;
             }
 
             if (result.dimensions === 1)
@@ -660,6 +686,10 @@ class ContentProvider implements DocumentLinkProvider
                 if (result.length >= 2 && result.length <= 3 && magnitude(result)[0] !== 0)
                 {
                     operators.push({ label: 'angle', description: '(to another vector)' });
+                }
+                if (result.length === 4)
+                {
+                    operators.push({ label: 'rotation', description: '(convert quaternion ix + jy + kz + w to rotation matrix)' });
                 }
             }
             else if (result.dimensions === 2)
@@ -751,6 +781,7 @@ class ContentProvider implements DocumentLinkProvider
                 case '2^x': result = exp2(result); continue;
                 case 'rad2deg': result = rad2deg(result); continue;
                 case 'deg2rad': result = deg2rad(result); continue;
+                case 'rotation': result = quaternionToMatrix(result); continue;
 
                 // Output
                 case 'copy':

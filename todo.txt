@@ -5,6 +5,7 @@
 - 4x3 'transform' matrix operations -- first 3 cols rotation, last col translation
 
 to publish updates:
+- update version in package.json
 - run "vsce package" in the root directory
 - go to https://marketplace.visualstudio.com/manage/publishers/maxabernethy2
 - click the ... and choose "update"
