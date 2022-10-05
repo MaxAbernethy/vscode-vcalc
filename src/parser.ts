@@ -127,17 +127,29 @@ export function parse(line: string): Node
                 valid = false;
             }
 
-            // Numeric character or sign - try to consume a number
-            if (c.search(/[0-9-]/) >= 0)
+            // Numeric character, sign, or leading decimal - try to consume a number
+            if (c.search(/[0-9-.]/) >= 0)
             {
                 valid = false; // A separator character will be required after this before the next number can begin
+                const rest = line.substr(i); // Search the line beginning from the current position
 
-                // Search the line beginning from the current position
-                // Match: beginning of string, [2]hex or [3]dec with optional [4]exponent, [5]non-alphanumeric or end of string
-                let match = line.substr(i).match(/^((0x[0-9A-Fa-f]+)|(-?\d+\.?\d*([eE][+-]?\d+)?[fF]?))([^a-zA-Z0-9]|$)/);
+                // Match: beginning of string, [1]number, non-alphanumeric or end of string.
+                // The first set of parentheses in each expression must contain the number to consume, so that we find it in match[1].
+                // Check for a hexadecimal number
+                let match = rest.match(/^(0x[0-9A-Fa-f]+)([^a-zA-Z0-9]|$)/);
+                if (match === null)
+                {
+                    // Check for a number with either no decimal or at least one digit to the left of it
+                    match = rest.match(/^(-?\d+\.?\d*([eE][+-]?\d+)?[fF]?)([^a-zA-Z0-9]|$)/);
+                }
+                if (match === null)
+                {
+                    // Check for a number with digits only to the right of the decimal
+                    match = rest.match(/^(-?\.\d+([eE][+-]?\d+)?[fF]?)([^a-zA-Z0-9]|$)/);
+                }
                 if (match !== null)
                 {
-                    let next = i + match[0].length - match[5].length;
+                    let next = i + match[1].length;
                     let number = new Node(i, '');
                     number.end = next;
                     number.type = NodeType.Scalar;
